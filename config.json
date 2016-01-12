@@ -1,0 +1,18 @@
+{
+    "/SA1": {
+        "source": "bridge:///home/sdavies/Desktop/tilelive-test/test.xml"
+    },
+    "/SA4b": {
+        "source": "bridge:///home/sdavies/Desktop/tilelive-test/data/FID_SA4_2011_AUST/data.xml"
+    },
+    "/SA4": {
+        "source": [
+            "mbtiles:///home/sdavies/Desktop/tilelive-test/data/FID_SA4_2011_AUST/store.mbtiles",
+            "bridge:///home/sdavies/Desktop/tilelive-test/data/FID_SA4_2011_AUST/data.xml"
+        ],
+        "zLevels": [
+            12,
+            
+        ]
+    }
+}

@@ -1,0 +1,11 @@
+{
+  "dependencies": {
+    "mbtiles": "^0.8.2",
+    "pbf": "*",
+    "tessera": "*",
+    "tilelive": "*",
+    "tilelive-bridge": "*",
+    "vector-tile": "*",
+    "when": "^3.7.7"
+  }
+}
