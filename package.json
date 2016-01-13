@@ -2,7 +2,7 @@
   "dependencies": {
     "mbtiles": "^0.8.2",
     "pbf": "*",
-    "tessera": "*",
+    "tessera": "steve9164/tessera",
     "tilelive": "*",
     "tilelive-bridge": "*",
     "vector-tile": "*",
