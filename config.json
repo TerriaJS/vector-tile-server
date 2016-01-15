@@ -1,8 +1,8 @@
 {
     "/SA4b": {
-        "source": "bridge:///home/sdavies/Desktop/tilelive-test/data/FID_SA4_2011_AUST/data.xml"
+        "source": "bridge://C:/Users/sdavies/Documents/server-config/data/FID_SA4_2011_AUST/data.xml"
     },
     "/SA4": {
-        "source": "mbtiles:///home/sdavies/Desktop/tilelive-test/data/FID_SA4_2011_AUST/store2.mbtiles"
+        "source": "mbtiles://C:/Users/sdavies/Documents/server-config/data/FID_SA4_2011_AUST/store_test2.mbtiles"
     }
 }

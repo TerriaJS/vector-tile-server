@@ -7,13 +7,20 @@ var zlib = require('zlib');
 var SphericalMercator = require('sphericalmercator');
 var when = require('when');
 
-var maxZ = 14;
+var fileIn = process.argv[2];
+var fileOut = process.argv[3];
+
+console.log(fileIn + '\n' + fileOut);
+
+var minZ = process.argv[4];
+var maxZ = process.argv[5];
 
 var f = function(z,x,y,source,mbtiles) {
     var deferred = when.defer();
     source.getTile(z, x, y, function(err, tile, headers) {
         if (err) {
             //console.log(err + ' ' + [z,x,y].join('/'));
+            // Tile not found. Push tile with a rectangle
             deferred.resolve(0);
             return;
         }
@@ -33,10 +40,9 @@ var f = function(z,x,y,source,mbtiles) {
     return deferred.promise;
 };
 
-tilelive.load('bridge:///home/sdavies/Desktop/tilelive-test/data/FID_SA4_2011_AUST/data.xml', function(err, source) {
+tilelive.load('bridge://' + fileIn, function(err, source) {
     if (err) throw err;
-
-    new MBTiles(__dirname + '/data/FID_SA4_2011_AUST/store.mbtiles', function(err, mbtiles) {
+    new MBTiles(fileOut, function(err, mbtiles) {
         if (err) throw err;
         mbtiles.startWriting(function(err) {
             console.log('Open for writing');
@@ -47,8 +53,19 @@ tilelive.load('bridge:///home/sdavies/Desktop/tilelive-test/data/FID_SA4_2011_AU
 
             var x = undefined;
             var y = undefined;
-            var z = 0;
+            var z = minZ;
+
             var bounds;
+
+            /*
+            // Continuing on from where generating stopped
+            // ========================
+            var z = 14;
+            var x = 13437;
+            var y = 7186;
+            bounds = merc.xyz([96.816941408,-43.740509603000035,159.109219008,-9.142175977], z);
+            // ========================
+            */
 
 
             (function generateNextTiles() {
