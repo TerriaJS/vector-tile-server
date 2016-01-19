@@ -19,13 +19,8 @@ var f = function(z,x,y,source,mbtiles) {
     var deferred = when.defer();
     source.getTile(z, x, y, function(err, tile, headers) {
         if (err) {
-            //console.log(err + ' ' + [z,x,y].join('/'));
-            // Tile not found. Push tile with a rectangle
             deferred.resolve(0);
             return;
-        }
-        else {
-            //console.log('Saving ' + [z,x,y].join('/') + '.pbf');
         }
         mbtiles.putTile(z, x, y, tile, function(err) {
             if (err) {
@@ -33,7 +28,6 @@ var f = function(z,x,y,source,mbtiles) {
             }
             else {
                 deferred.resolve(1);
-                //console.log('Successfully saved ' + [z,x,y].join('/') + '.pbf');
             }
         })
     });
@@ -119,6 +113,11 @@ tilelive.load('bridge://' + fileIn, function(err, source) {
                 mbtiles.stopWriting(function (err) {
                     if (err) throw err;
                     console.log('Writing stopped');
+                    mbtiles.close(function (err) {
+                        if (err) throw err;
+                        console.log('Closed');
+                        process.exit();
+                    })
                 });
             }).otherwise(console.log);
 
