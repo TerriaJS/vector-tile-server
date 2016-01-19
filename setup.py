@@ -1,5 +1,5 @@
 # Python script to automate conversion of region mapping from WMS to Tessera server
-# Pass regionMapping.json as an argument as follows:
+# Pass regionMapping.json as follows:
 #
 #    python setup.py path/to/regionMapping.json
 #
@@ -11,12 +11,13 @@ import zipfile
 import subprocess
 import os
 
+# Constants
+const_maxZ = "20"
+const_minZ = "0"
+const_maxGenZ = "11"
+
 directory = 'data2/'
-
 regionMapping = json.load(open(sys.argv[1]))
-
-print(list(regionMapping.keys()))
-
 processedLayers = set()
 
 generate_data_xml = lambda layerName: """<?xml version="1.0" encoding="utf-8"?>
@@ -42,28 +43,47 @@ generate_url = lambda layerName: "http://geoserver.nationalmap.nicta.com.au:80/r
 
 configJSON = {}
 
+tileGenerators = []
+
 for k,v in regionMapping['regionWmsMap'].items():
     try:
         layerName = v['layerName'].replace('region_map:', '')
         if layerName not in processedLayers:
+
             url = generate_url(v['layerName'])
-            print('Downloading {}'.format(url))
+            #print('Downloading {}'.format(url))
             urllib.request.urlretrieve(url, directory + layerName + '.zip')
 
-            print('Unzipping {}'.format(layerName + '.zip'))
+            #print('Unzipping {}'.format(layerName + '.zip'))
             with zipfile.ZipFile(directory + layerName + '.zip', 'r') as z:
                 z.extractall(path=directory + layerName + '/')
 
-            print('Creating data.xml')
-            with open(directory + layerName + '/data_test.xml', 'w') as f:
+            path = os.path.abspath(directory + layerName)
+            hybridJsonPath = path + '/hybrid.json'
+            dataXmlPath = path + '/data.xml'
+            mbtilesPath = path + '/store.mbtiles'
+
+            if (len(tileGenerators) >= 5):
+                tileGenerators[0][1].wait() # Wait for the oldest process
+                tileGenerators[0][1].check_returncode()
+                print('Finished generating tiles for ' + tileGenerators[0][0])
+                del tileGenerators[0]
+
+            tileGenerators.append((layerName, subprocess.Popen(["node", "save_tiles2.js", dataXmlPath, mbtilesPath, const_minZ, const_maxGenZ])))
+
+            #print('Creating data.xml')
+            with open(dataXmlPath, 'w') as f:
                 f.write(generate_data_xml(layerName))
 
-            dataXmlPath = os.path.abspath(directory + layerName + '/data_test.xml')
-            mbtilesPath = os.path.abspath(directory + layerName + '/store_test.mbtiles')
 
-            print('Generating tiles')
-            subprocess.check_call(["node", "save_tiles.js", dataXmlPath, mbtilesPath, "0", "3"])
-            configJSON['/' + layerName] = {"source": "mbtiles://" + mbtilesPath}
+            hybridJSON = {"sources": [
+                {"source": "mbtiles://" + mbtilesPath, "minZ": const_minZ, "maxZ": const_maxGenZ},
+                {"source": "bridge://" + dataXmlPath, "minZ": const_minZ, "maxZ": const_maxZ}
+            ]}
+            with open(hybridJsonPath, 'w') as f:
+                json.dump(hybridJSON, f)
+
+            configJSON['/' + layerName] = {"source": "hybrid://" + hybridJsonPath}
 
             processedLayers.add(layerName)
     except Exception as e:

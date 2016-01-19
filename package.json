@@ -2,10 +2,28 @@
   "dependencies": {
     "mbtiles": "^0.8.2",
     "pbf": "*",
-    "tessera": "steve9164/tessera",
+    "tessera": "^0.6.0",
     "tilelive": "*",
     "tilelive-bridge": "*",
     "vector-tile": "*",
     "when": "^3.7.7"
-  }
+  },
+  "name": "server-config",
+  "version": "0.1.0",
+  "main": "server.sh",
+  "devDependencies": {},
+  "scripts": {
+    "test": "./server.sh"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/steve9164/server-config.git"
+  },
+  "author": "Stephen Davies",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/steve9164/server-config/issues"
+  },
+  "homepage": "https://github.com/steve9164/server-config#readme",
+  "description": ""
 }
