@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "mapnik": "^3.4.14",
     "mbtiles": "^0.8.2",
     "pbf": "*",
     "tessera": "^0.6.0",

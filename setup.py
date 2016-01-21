@@ -14,7 +14,9 @@ import os
 # Constants
 const_maxZ = "20"
 const_minZ = "0"
-const_maxGenZ = "11"
+const_maxGenZ = "6"
+
+const_processes = 5
 
 directory = 'data2/'
 regionMapping = json.load(open(sys.argv[1]))
@@ -26,6 +28,7 @@ generate_data_xml = lambda layerName: """<?xml version="1.0" encoding="utf-8"?>
 
 <Parameters>
   <Parameter name="format">pbf</Parameter>
+  <Parameter name="bounds">96.816941408,-43.740509603,159.109219008,-9.142175977</Parameter>
 </Parameters>
 
 <Layer name="{layerName}" buffer-size="8" srs="+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs">
@@ -45,6 +48,8 @@ configJSON = {}
 
 tileGenerators = []
 
+problemRegionMaps = []
+
 for k,v in regionMapping['regionWmsMap'].items():
     try:
         layerName = v['layerName'].replace('region_map:', '')
@@ -63,14 +68,13 @@ for k,v in regionMapping['regionWmsMap'].items():
             dataXmlPath = path + '/data.xml'
             mbtilesPath = path + '/store.mbtiles'
 
-            if (len(tileGenerators) >= 5):
-                tileGenerators[0][1].wait() # Wait for the oldest process
-                tileGenerators[0][1].check_returncode()
-                print('Finished generating tiles for ' + tileGenerators[0][0])
+            if (len(tileGenerators) >= const_processes):
+                print('Too many processes')
+                print((('Finished' if tileGenerators[0][1].wait() == 0 else 'Error') + ' generating tiles for {}').format(tileGenerators[0][0]))
                 del tileGenerators[0]
 
-            tileGenerators.append((layerName, subprocess.Popen(["node", "save_tiles2.js", dataXmlPath, mbtilesPath, const_minZ, const_maxGenZ])))
-
+            tileGenerators.append((layerName, subprocess.Popen(["node", "save_tiles.js", dataXmlPath, mbtilesPath, const_minZ, const_maxGenZ])))
+            print('Spawned tile generation process for {}'.format(layerName))
             #print('Creating data.xml')
             with open(dataXmlPath, 'w') as f:
                 f.write(generate_data_xml(layerName))
@@ -87,7 +91,14 @@ for k,v in regionMapping['regionWmsMap'].items():
 
             processedLayers.add(layerName)
     except Exception as e:
+        problemRegionMaps.append((layerName, e))
         print(e)
         continue
 
 json.dump(configJSON, open('config_test.json', 'w'))
+
+# Wait for all processes to finish
+for t in tileGenerators:
+    print((('Finished' if t[1].wait() == 0 else 'Error') + ' generating tiles for {}').format(t[0]))
+
+print('Errors:\n- ' + '\n- '.join(problemRegionMaps))

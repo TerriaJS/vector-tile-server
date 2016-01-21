@@ -21,9 +21,9 @@ var maxZ = process.argv[5];
 var rectangle = [96.816941408,-43.740509603000035,159.109219008,-9.142175977]; // Bounding box of Australia and islands
 
 function copyTile(z,x,y,source,dest) {
-    return nodefn.call(source.getTile.bind(source), z,x,y).else(0).then(function (args) {
+    return nodefn.call(source.getTile.bind(source), z,x,y).then(function (args) {
         return nodefn.call(dest.putTile.bind(dest), z, x, y, args[0]).yield(1); // 1 tile drawn
-    }); // 0 tiles drawn
+    }, function (err) { return 0; }); // 0 tiles drawn
 }
 
 function copyTiles(source, dest) {
@@ -88,7 +88,7 @@ function copyTiles(source, dest) {
             if (promises.length !== 0) {
                 tiles_attempted += promises.length
                 tiles_drawn += result.reduce(function(a,b) { return a+b; }, 0);
-                //console.log(tiles_drawn + ' tiles drawn out of ' + tiles_attempted + ' tiles attempted.');
+                console.log(tiles_drawn + ' tiles drawn out of ' + tiles_attempted + ' tiles attempted.');
                 return generateNextTiles();
             }
         });
@@ -97,7 +97,7 @@ function copyTiles(source, dest) {
 
 function copyInfo(source, dest) {
     return nodefn.call(source.getInfo.bind(source)).then(function (info) {
-        return nodefn.call(dest.putInfo.bind(dest), info);
+        //return nodefn.call(dest.putInfo.bind(dest), info);
     });
 }
 
@@ -111,7 +111,8 @@ when.all([ // Initialise source and mbtiles
     return nodefn.call(mbtiles.startWriting.bind(mbtiles)).then(function() {
         console.log('Open for writing');
     }).then(function () {
-        return when.join(copyTiles(source, mbtiles), copyInfo(source, mbtiles)); // Copy tiles and info simultaneously
+        //return when.join(copyTiles(source, mbtiles), copyInfo(source, mbtiles)); // Copy tiles and info simultaneously
+        return copyTiles(source, mbtiles);
     }).then(function () {
         return nodefn.call(mbtiles.stopWriting.bind(mbtiles));
     }).then(function () {
@@ -120,4 +121,4 @@ when.all([ // Initialise source and mbtiles
     }).then(function () {
         console.log('Closed');
     });
-});//.then(function() { process.exit(); });
+}).otherwise(console.log).then(function() { process.exit(); });
