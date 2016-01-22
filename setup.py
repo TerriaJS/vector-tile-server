@@ -1,4 +1,4 @@
-# Python script to automate conversion of region mapping from WMS to Tessera server
+# Python script to automate conversion of region mapping from geoserver to Tessera server
 # Pass regionMapping.json as follows:
 #
 #    python setup.py path/to/regionMapping.json
@@ -10,6 +10,8 @@ import urllib.request
 import zipfile
 import subprocess
 import os
+import concurrent.futures
+from functools import partial
 
 # Constants
 const_maxZ = "20"
@@ -49,6 +51,11 @@ configJSON = {}
 tileGenerators = []
 
 problemRegionMaps = []
+with concurrent.futures.ProcessPoolExecutor() as processes:
+    with concurrent.futures.ThreadPoolExecutor() as threads:
+        for v in regionMapping.values():
+            submit(download, v).add_done_callback
+        executor.map(download_and_process, regionMapping.values())
 
 for k,v in regionMapping['regionWmsMap'].items():
     try:

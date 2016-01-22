@@ -1,7 +1,10 @@
 {
   "dependencies": {
+    "adm-zip": "^0.4.7",
+    "download-file": "^0.1.5",
     "mapnik": "^3.4.14",
     "mbtiles": "^0.8.2",
+    "node-pre-gyp": "^0.6.19",
     "pbf": "*",
     "tessera": "^0.6.0",
     "tilelive": "*",

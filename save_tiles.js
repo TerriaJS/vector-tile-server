@@ -11,9 +11,10 @@ var VectorTile = require('vector-tile').VectorTile;
 var SphericalMercator = require('sphericalmercator');
 var when = require('when');
 var nodefn = require('when/node');
+var path = require('path');
 
-var fileIn = process.argv[2];
-var fileOut = process.argv[3];
+var fileIn = path.resolve(process.argv[2]);
+var fileOut = path.resolve(process.argv[3]);
 
 var minZ = process.argv[4];
 var maxZ = process.argv[5];
@@ -23,7 +24,10 @@ var rectangle = [96.816941408,-43.740509603000035,159.109219008,-9.142175977]; /
 function copyTile(z,x,y,source,dest) {
     return nodefn.call(source.getTile.bind(source), z,x,y).then(function (args) {
         return nodefn.call(dest.putTile.bind(dest), z, x, y, args[0]).yield(1); // 1 tile drawn
-    }, function (err) { return 0; }); // 0 tiles drawn
+    }, function (err) {
+        console.log([z,x,y].join('/'));
+        return 0;
+    }); // 0 tiles drawn
 }
 
 function copyTiles(source, dest) {
@@ -80,7 +84,6 @@ function copyTiles(source, dest) {
             }
             else {
                 x = undefined;
-                console.log('End of level ' + z + '. ' + (tiles_attempted + promises.length) + ' tiles attempted.');
             }
         }
 
@@ -88,7 +91,7 @@ function copyTiles(source, dest) {
             if (promises.length !== 0) {
                 tiles_attempted += promises.length
                 tiles_drawn += result.reduce(function(a,b) { return a+b; }, 0);
-                console.log(tiles_drawn + ' tiles drawn out of ' + tiles_attempted + ' tiles attempted.');
+                //console.log(tiles_drawn + ' tiles drawn out of ' + tiles_attempted + ' tiles attempted.');
                 return generateNextTiles();
             }
         });
@@ -97,7 +100,7 @@ function copyTiles(source, dest) {
 
 function copyInfo(source, dest) {
     return nodefn.call(source.getInfo.bind(source)).then(function (info) {
-        //return nodefn.call(dest.putInfo.bind(dest), info);
+        return nodefn.call(dest.putInfo.bind(dest), info);
     });
 }
 
@@ -109,16 +112,13 @@ when.all([ // Initialise source and mbtiles
     var mbtiles = l[1];
 
     return nodefn.call(mbtiles.startWriting.bind(mbtiles)).then(function() {
-        console.log('Open for writing');
-    }).then(function () {
-        //return when.join(copyTiles(source, mbtiles), copyInfo(source, mbtiles)); // Copy tiles and info simultaneously
-        return copyTiles(source, mbtiles);
+        return when.join(copyTiles(source, mbtiles), copyInfo(source, mbtiles));
     }).then(function () {
         return nodefn.call(mbtiles.stopWriting.bind(mbtiles));
     }).then(function () {
-        console.log('Writing stopped');
+        //console.log('Writing stopped');
         return when.join(nodefn.call(mbtiles.close.bind(mbtiles)), nodefn.call(source.close.bind(source)));
     }).then(function () {
-        console.log('Closed');
+        //console.log('Closed');
     });
-}).otherwise(console.log).then(function() { process.exit(); });
+});//.otherwise(console.log).then(function() { process.exit(); });

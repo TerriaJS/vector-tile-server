@@ -1,8 +1,8 @@
 {
-    "/SA4": {
+    "/SA4b": {
         "source": "hybrid://C:/Users/sdavies/Documents/tilelive/server-config/data/FID_SA4_2011_AUST/hybrid.json"
     },
-    "/SA4b": {
+    "/SA4": {
         "source": "bridge://C:/Users/sdavies/Documents/tilelive/server-config/data/FID_SA4_2011_AUST/data.xml"
     },
     "/SA4a": {
