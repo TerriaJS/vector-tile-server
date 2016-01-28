@@ -4,7 +4,7 @@
 
 <Parameters>
   <Parameter name="format">pbf</Parameter>
-  <Parameter name="bounds">96.816941408,-43.740509603,159.109219008,-9.142175977</Parameter>
+  <Parameter name="bounds">{bbox}</Parameter>
 </Parameters>
 
 <Layer name="{layerName}" buffer-size="8" srs="+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs">

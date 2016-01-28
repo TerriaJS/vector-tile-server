@@ -15,84 +15,110 @@ var path = require('path');
 var download = require('download-file');
 var AdmZip = require('adm-zip');
 var binary = require('node-pre-gyp');
-
+var shapefile = require('shapefile');
 
 
 var const_maxZ = 20;
 var const_minZ = 0;
-var const_maxGenZ = 6;
+//var const_maxGenZ = 6;
 
-var const_parallel_limit = 5; // Test whether this works
-// If parallel_limit isn't working, try guarding a nodefn.lift version of exec and use that guarded exec
-// for creating processes
+var const_parallel_limit = 5;
 
-var directory = 'data2/';
+
+var directory = 'data3/';
 var tmp = 'tmp/';
 
 // From mapnik/bin/mapnik-shapeindex.js
-var shapeindex = path.join(path.dirname(binary.find(require.resolve('mapnik/package.json'))), 'shapeindex');
+var shapeindex = path.join(path.dirname( binary.find(require.resolve('mapnik/package.json')) ), 'shapeindex');
 
 
 var data_xml_template = fs.readFileSync('data.xml.template', 'utf8');
-
-function generate_data_xml(layerName) {
-    return data_xml_template.replace('{layerName}', layerName);
+function generate_data_xml(layerName, bbox) {
+    return data_xml_template.replace('{layerName}', layerName).replace('{bbox}', bbox.join(','));
 }
 
 function generate_shp_url(layerName) {
     return "http://geoserver.nationalmap.nicta.com.au:80/region_map/region_map/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=region_map:{layerName}&outputFormat=SHAPE-ZIP".replace('{layerName}', layerName);
 }
 
-
-function processLayer(configJson, layerName) {
+function processLayer(layerName) {
     var zipFile = tmp + layerName + '.zip';
+    var layerDir = directory + layerName + '/';
+    var dataXmlFile = layerDir + 'data.xml';
+    //var hybridJsonFile = layerDir + 'hybrid.json';
+    //var mbtilesFile = layerDir + 'store.mbtiles';
+
     console.log('Downloading ' + layerName);
     return nodefn.call(download, generate_shp_url(layerName), {directory: tmp, filename: layerName + '.zip'}).then(function() {
-    //return nodefn.call(execFile, 'get_shapefile.sh', [generate_shp_url(layerName), zipFile]).then(function() {
-        var layerDir = directory + layerName + '/';
         console.log('Unzipping ' + zipFile);
         var zip = new AdmZip(zipFile);
         zip.extractAllTo(layerDir);
-        zip = undefined;
-
-        var hybridJsonFile = layerDir + 'hybrid.json';
-        var dataXmlFile = layerDir + 'data.xml';
-        var mbtilesFile = layerDir + 'store.mbtiles';
-
-        // Run shapeindex
+    }).then(function() {
         console.log('Running shapeindex for ' + layerName);
-        return nodefn.call(exec, shapeindex + ' ' + layerDir + layerName + '.shp').then(function () {
-            console.log('Running tile generation for ' + layerName);
-            return nodefn.call(exec, 'node save_tiles.js ' + [dataXmlFile, mbtilesFile, const_minZ, const_maxGenZ].join(' '));
-        }).then(function() {
-            console.log('Tile generation finished for ' + layerName);
-            fs.writeFileSync(hybridJsonFile, JSON.stringify({"sources": [
-                {"source": "mbtiles://" + path.resolve(mbtilesFile), "minZ": const_minZ, "maxZ": const_maxGenZ},
-                {"source": "bridge://" + path.resolve(dataXmlFile), "minZ": const_minZ, "maxZ": const_maxZ}
-            ]}));
-            configJson['/' + layerName] = {"source": "hybrid://" + path.resolve(hybridJsonFile)};
-        });
+        return nodefn.call(exec, shapeindex + ' ' + layerDir + layerName + '.shp');
+    }).then(function() {
+        var reader = shapefile.reader(layerDir + layerName + '.shp');
+        return nodefn.call(reader.readHeader.bind(reader));
+    }).then(function(header) {
+        return nodefn.call(fs.writeFile, dataXmlFile, generate_data_xml(layerName, header.bbox));
+    }).yield({
+        layerName: layerName,
+        config: {"source": "bridge://" + path.resolve(dataXmlFile)},
+        regionMapping: {
+            layerName: layerName,
+            server: {
+                url: "http://127.0.0.1:8000/" + layerName + "/{z}/{x}/{y}.pbf",
+                subdomains: undefined
+            }
+        }
     });
+
+
+    /*.then(function() {
+        console.log('Running tile generation for ' + layerName);
+        return nodefn.call(exec, 'node save_tiles.js ' + [dataXmlFile, mbtilesFile, const_minZ, const_maxGenZ].join(' '));
+    }).then(function() {
+        console.log('Tile generation finished for ' + layerName);
+        fs.writeFileSync(hybridJsonFile, JSON.stringify({"sources": [
+            {"source": "mbtiles://" + path.resolve(mbtilesFile), "minZ": const_minZ, "maxZ": const_maxGenZ},
+            {"source": "bridge://" + path.resolve(dataXmlFile), "minZ": const_minZ, "maxZ": const_maxZ}
+        ]}));
+        configJson['/' + layerName] = {"source": "hybrid://" + path.resolve(hybridJsonFile)};
+    });*/
 }
 
 
 // Read JSON file and extract layer names
-var regionMapping = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+var regionMappingJson = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 // Construct a set of layers (layers are sometimes duplicated. Set is used to remove duplicates)
 var layers = new Set();
-var regionMaps = Object.keys(regionMapping.regionWmsMap);
+var regionMaps = Object.keys(regionMappingJson.regionWmsMap);
 for (var i = 0; i < regionMaps.length; i++) {
-    layers.add(regionMapping.regionWmsMap[regionMaps[i]].layerName.replace('region_map:', ''));
+    layers.add(regionMappingJson.regionWmsMap[regionMaps[i]].layerName.replace('region_map:', '')));
 }
 
 // For each layer, download the associated shapefile zip, unzip, run shapeindex and generate tiles
 
-var promises = [];
-
 var configJson = {};
 
-var guardedProcessLayer = guard(guard.n(const_parallel_limit), processLayer.bind(undefined, configJson));
+// Only allow const_parallel_limit number of concurrent processLayer requests
+var guardedProcessLayer = guard(guard.n(const_parallel_limit), processLayer);
 
-when.map(Array.from(layers), guardedProcessLayer).then(function() {
-    fs.writeFileSync('config_test.json', JSON.stringify(configJson));
-});//.otherwise(console.log);
+var layer_data = {};
+when.map(Array.from(layers).map(guardedProcessLayer), function(data) {
+    // Add layer data to layers as each layer finishes processing
+    configJson['/' + data.layerName] = data.config;
+    layer_data[data.layerName] = data.regionMapping;
+}).then(function() {
+    // Once all layers have finished processing
+    for (var i = 0; i < regionMaps.length; i++) {
+        var layerName = regionMappingJson.regionWmsMap[regionMaps[i]].layerName.replace('region_map:', ''));
+        Object.assign(regionMappingJson.regionWmsMap[regionMaps[i]], layer_data[layerName]); // Update properties
+
+    }
+
+    return when.join(
+        nodefn.call(fs.writeFile, 'config_test.json', JSON.stringify(configJson)),
+        nodefn.call(fs.writeFile, 'regionMapping_out.json', JSON.stringify(regionMappingJson))
+    );
+});
