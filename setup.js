@@ -13,7 +13,8 @@ var guard = require('when/guard');
 var fs = require('fs');
 var path = require('path');
 var download = require('download-file');
-var AdmZip = require('adm-zip');
+//var AdmZip = require('adm-zip');
+var extract = require('extract-zip');
 var binary = require('node-pre-gyp');
 var shapefile = require('shapefile');
 
@@ -34,7 +35,7 @@ var shapeindex = path.join(path.dirname( binary.find(require.resolve('mapnik/pac
 
 var data_xml_template = fs.readFileSync('data.xml.template', 'utf8');
 function generate_data_xml(layerName, bbox) {
-    return data_xml_template.replace('{layerName}', layerName).replace('{bbox}', bbox.join(','));
+    return data_xml_template.replace(/\{layerName\}/g, layerName).replace(/\{bbox\}/g, bbox.join(',')); // Have to use regex for global (g) option (like sed)
 }
 
 function generate_shp_url(layerName) {
@@ -48,13 +49,14 @@ function processLayer(layerName) {
     //var hybridJsonFile = layerDir + 'hybrid.json';
     //var mbtilesFile = layerDir + 'store.mbtiles';
 
-    console.log('Downloading ' + layerName);
+    //console.log('Downloading ' + layerName);
     return nodefn.call(download, generate_shp_url(layerName), {directory: tmp, filename: layerName + '.zip'}).then(function() {
-        console.log('Unzipping ' + zipFile);
-        var zip = new AdmZip(zipFile);
-        zip.extractAllTo(layerDir);
+        //console.log('Unzipping ' + zipFile);
+        return nodefn.call(extract, zipFile, {dir: layerDir});
+        /*var zip = new AdmZip(zipFile);
+        zip.extractAllTo(layerDir);*/
     }).then(function() {
-        console.log('Running shapeindex for ' + layerName);
+        //console.log('Running shapeindex for ' + layerName);
         return nodefn.call(exec, shapeindex + ' ' + layerDir + layerName + '.shp');
     }).then(function() {
         var reader = shapefile.reader(layerDir + layerName + '.shp');
@@ -71,6 +73,9 @@ function processLayer(layerName) {
                 subdomains: undefined
             }
         }
+    }).catch(function(err) {
+        console.log('Layer ' + layerName + ' failed with error: ' + err);
+        return null;
     });
 
 
@@ -94,7 +99,7 @@ var regionMappingJson = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 var layers = new Set();
 var regionMaps = Object.keys(regionMappingJson.regionWmsMap);
 for (var i = 0; i < regionMaps.length; i++) {
-    layers.add(regionMappingJson.regionWmsMap[regionMaps[i]].layerName.replace('region_map:', '')));
+    layers.add(regionMappingJson.regionWmsMap[regionMaps[i]].layerName.replace('region_map:', ''));
 }
 
 // For each layer, download the associated shapefile zip, unzip, run shapeindex and generate tiles
@@ -107,18 +112,21 @@ var guardedProcessLayer = guard(guard.n(const_parallel_limit), processLayer);
 var layer_data = {};
 when.map(Array.from(layers).map(guardedProcessLayer), function(data) {
     // Add layer data to layers as each layer finishes processing
-    configJson['/' + data.layerName] = data.config;
-    layer_data[data.layerName] = data.regionMapping;
+    if (data) {
+        configJson['/' + data.layerName] = data.config;
+        layer_data[data.layerName] = data.regionMapping;
+    }
 }).then(function() {
     // Once all layers have finished processing
     for (var i = 0; i < regionMaps.length; i++) {
-        var layerName = regionMappingJson.regionWmsMap[regionMaps[i]].layerName.replace('region_map:', ''));
-        Object.assign(regionMappingJson.regionWmsMap[regionMaps[i]], layer_data[layerName]); // Update properties
-
+        var layerName = regionMappingJson.regionWmsMap[regionMaps[i]].layerName.replace('region_map:', '');
+        if (layer_data[layerName]) {
+            Object.assign(regionMappingJson.regionWmsMap[regionMaps[i]], layer_data[layerName]); // Update properties
+        }
     }
 
     return when.join(
-        nodefn.call(fs.writeFile, 'config_test.json', JSON.stringify(configJson)),
-        nodefn.call(fs.writeFile, 'regionMapping_out.json', JSON.stringify(regionMappingJson))
+        nodefn.call(fs.writeFile, 'config_test.json', JSON.stringify(configJson, null, 4)),
+        nodefn.call(fs.writeFile, 'regionMapping_out.json', JSON.stringify(regionMappingJson, null, 2))
     );
 });
