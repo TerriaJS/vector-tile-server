@@ -109,8 +109,13 @@ var configJson = {};
 // Only allow const_parallel_limit number of concurrent processLayer requests
 var guardedProcessLayer = guard(guard.n(const_parallel_limit), processLayer);
 
+var layer_array = [];
+layers.forEach(function(entry) {
+    layer_array.push(entry);
+})
+
 var layer_data = {};
-when.map(Array.from(layers).map(guardedProcessLayer), function(data) {
+when.map(layer_array.map(guardedProcessLayer), function(data) {
     // Add layer data to layers as each layer finishes processing
     if (data) {
         configJson['/' + data.layerName] = data.config;
