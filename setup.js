@@ -157,7 +157,7 @@ when.map(layer_array.map(guardedProcessLayer), function(data) {
     }
 
     return when.join(
-        nodefn.call(fs.writeFile, 'config_test.json', JSON.stringify(configJson, null, 4)),
+        nodefn.call(fs.writeFile, 'config.json', JSON.stringify(configJson, null, 4)),
         nodefn.call(fs.writeFile, 'regionMapping_out.json', JSON.stringify(regionMappingJson, null, 2))
     );
 });
