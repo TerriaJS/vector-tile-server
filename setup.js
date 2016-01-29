@@ -13,7 +13,6 @@ var guard = require('when/guard');
 var fs = require('fs');
 var path = require('path');
 var download = require('download-file');
-//var AdmZip = require('adm-zip');
 var extract = require('extract-zip');
 var binary = require('node-pre-gyp');
 var shapefile = require('shapefile');
@@ -77,10 +76,7 @@ function processLayer(layerName) {
 
     //console.log('Downloading ' + layerName);
     return nodefn.call(download, generate_shp_url(layerName), {directory: tmp, filename: layerName + '.zip'}).then(function() {
-        //console.log('Unzipping ' + zipFile);
         return nodefn.call(extract, zipFile, {dir: layerDir});
-        /*var zip = new AdmZip(zipFile);
-        zip.extractAllTo(layerDir);*/
     }).then(function() {
         //console.log('Running shapeindex for ' + layerName);
         return nodefn.call(exec, shapeindex + ' ' + layerDir + layerName + '.shp');
