@@ -88,17 +88,18 @@ function processLayer(layerName) {
         var reader = shapefile.reader(layerDir + layerName + '.shp');
         return nodefn.call(reader.readHeader.bind(reader));
     }).then(function(header) {
-        return nodefn.call(fs.writeFile, dataXmlFile, generate_data_xml(layerName, header.bbox));
-    }).yield({
-        layerName: layerName,
-        config: {"source": "bridge://" + path.resolve(dataXmlFile)},
-        regionMapping: {
+        return nodefn.call(fs.writeFile, dataXmlFile, generate_data_xml(layerName, header.bbox)).yield({
             layerName: layerName,
-            server: {
-                url: "http://127.0.0.1:8000/" + layerName + "/{z}/{x}/{y}.pbf",
-                subdomains: undefined
+            config: {"source": "bridge://" + path.resolve(dataXmlFile)},
+            regionMapping: {
+                layerName: layerName,
+                server: {
+                    url: "http://127.0.0.1:8000/" + layerName + "/{z}/{x}/{y}.pbf",
+                    subdomains: undefined
+                },
+                bbox: header.bbox
             }
-        }
+        });
     }).catch(function(err) {
         console.log('Layer ' + layerName + ' failed with error: ' + err);
         return null;
