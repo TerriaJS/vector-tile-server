@@ -14,7 +14,6 @@
   "main": "server.sh",
   "devDependencies": {},
   "scripts": {
-    "test": "./server.sh"
   },
   "repository": {
     "type": "git",
