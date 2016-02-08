@@ -5,17 +5,15 @@
 //
 
 var exec = require('child_process').exec;
-//var execFile = require('child_process').execFile;
-var spawn = require('child_process').spawn;
+
 var when = require('when');
 var nodefn = require('when/node');
 var guard = require('when/guard');
 var fs = require('fs');
 var path = require('path');
-var download = require('download-file');
-var extract = require('extract-zip');
 var binary = require('node-pre-gyp');
 var shapefile = require('shapefile');
+var merc = new (require('sphericalmercator'))();
 
 
 // From Mozilla MDN. Polyfill for old Node versions
@@ -51,40 +49,30 @@ var const_minZ = 0;
 var const_parallel_limit = 5;
 
 
-var directory = 'data3/';
-var tmp = 'tmp/';
+var directory = 'data2/';
+var shapefile_dir = 'geoserver_shapefiles/';
 
 // From mapnik/bin/mapnik-shapeindex.js
 var shapeindex = path.join(path.dirname( binary.find(require.resolve('mapnik/package.json')) ), 'shapeindex');
 
 
 var data_xml_template = fs.readFileSync('data.xml.template', 'utf8');
-function generate_data_xml(layerName, bbox) {
+function generateDataXml(layerName, bbox) {
     return data_xml_template.replace(/\{layerName\}/g, layerName).replace(/\{bbox\}/g, bbox.join(',')); // Have to use regex for global (g) option (like sed)
 }
 
-function generate_shp_url(layerName) {
-    return "http://geoserver.nationalmap.nicta.com.au:80/region_map/region_map/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=region_map:{layerName}&outputFormat=SHAPE-ZIP".replace('{layerName}', layerName);
-}
-
 function processLayer(layerName) {
-    var zipFile = tmp + layerName + '.zip';
     var layerDir = directory + layerName + '/';
     var dataXmlFile = layerDir + 'data.xml';
-    //var hybridJsonFile = layerDir + 'hybrid.json';
-    //var mbtilesFile = layerDir + 'store.mbtiles';
 
-    //console.log('Downloading ' + layerName);
-    return nodefn.call(download, generate_shp_url(layerName), {directory: tmp, filename: layerName + '.zip'}).then(function() {
-        return nodefn.call(extract, zipFile, {dir: layerDir});
-    }).then(function() {
+    return nodefn.call(exec, '"C:\\Program Files\\GDAL\\GDALShell.bat" && ogr2ogr -t_srs EPSG:3857 -clipsrc -180 -85.0511 180 85.0511 -overwrite -f "ESRI Shapefile" ' + layerDir.slice(0,-1) + ' ' + shapefile_dir + layerName + '.shp').then(function() {
         //console.log('Running shapeindex for ' + layerName);
-        return nodefn.call(exec, shapeindex + ' ' + layerDir + layerName + '.shp');
+        //return nodefn.call(exec, shapeindex + ' ' + layerDir + layerName + '.shp');
     }).then(function() {
         var reader = shapefile.reader(layerDir + layerName + '.shp');
         return nodefn.call(reader.readHeader.bind(reader));
     }).then(function(header) {
-        return nodefn.call(fs.writeFile, dataXmlFile, generate_data_xml(layerName, header.bbox)).yield({
+        return nodefn.call(fs.writeFile, dataXmlFile, generateDataXml(layerName, header.bbox)).yield({
             layerName: layerName,
             config: {"source": "bridge://" + path.resolve(dataXmlFile)},
             regionMapping: {
@@ -93,7 +81,7 @@ function processLayer(layerName) {
                     url: "http://127.0.0.1:8000/" + layerName + "/{z}/{x}/{y}.pbf",
                     subdomains: undefined
                 },
-                bbox: header.bbox
+                bbox: merc.convert(header.bbox, "WGS84")
             }
         });
     }).catch(function(err) {
