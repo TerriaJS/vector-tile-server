@@ -3,17 +3,20 @@
     "download-file": "^0.1.5",
     "extract-zip": "^1.4.1",
     "mapnik": "^3.4.14",
+    "mbtiles": "^0.8.2",
     "node-pre-gyp": "^0.6.19",
     "shapefile": "^0.3.1",
-    "tessera": "^0.6.0",
-    "tilelive-bridge": "steve9164/tilelive-bridge",
+    "tessera": "github:steve9164/tessera",
+    "tilelive-bridge": "github:steve9164/tilelive-bridge",
+    "tilelive-hybrid": "github:steve9164/tilelive-hybrid",
     "when": "^3.7.7"
   },
   "name": "server-config",
   "version": "0.1.0",
-  "main": "server.sh",
+  "main": "server.sh &",
   "devDependencies": {},
   "scripts": {
+    "start": "bash -c \"./server.sh\""
   },
   "repository": {
     "type": "git",
@@ -25,5 +28,5 @@
     "url": "https://github.com/steve9164/server-config/issues"
   },
   "homepage": "https://github.com/steve9164/server-config#readme",
-  "description": ""
+  "description": "Configuration, data and helper scripts for [Tessera server](https://github.com/mojodna/tessera). Designed to work as a vector tile server for [TerriaJS](https://github.com/TerriaJS/terriajs)"
 }
