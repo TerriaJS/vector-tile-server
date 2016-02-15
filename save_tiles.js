@@ -62,7 +62,7 @@ function copyTiles(source, dest) {
 
                 if (typeof y === "undefined") y = bounds.minY;
                 for (; y <= bounds.maxY; y++) {
-                    if (promises.length < 100) {
+                    if (promises.length < 10) {
                         //console.log('Saving ' + [z,x,y].join('/') + '.pbf');
                         promises.push(copyTile(z,x,y,source,dest));
                     }

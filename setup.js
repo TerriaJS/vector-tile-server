@@ -16,7 +16,7 @@ var shapefile = require('shapefile');
 var merc = new (require('sphericalmercator'))();
 
 // Promise versions of node-style functions
-var fs.writeFilePromise = nodefn.lift(fs.writeFile);
+fs.writeFilePromise = nodefn.lift(fs.writeFile);
 var execPromise = nodefn.lift(exec);
 
 
@@ -48,22 +48,25 @@ if (typeof Object.assign != 'function') {
 
 var const_maxZ = 20;
 var const_minZ = 0;
-var const_maxGenZ = 6;
+var const_maxGenZ = 10;
 
 var const_parallel_limit = 3;
 
 
-var directory = 'data4/';
+var directory = 'data5/';
 var shapefile_dir = 'geoserver_shapefiles/';
 var pgsql_dir = 'c:\\PROGRA~1\\PostgreSQL\\9.5\\bin\\';
+var pgsql_db = 'region_mapping3';
 
 // From mapnik/bin/mapnik-shapeindex.js
 var shapeindex = path.join(path.dirname( binary.find(require.resolve('mapnik/package.json')) ), 'shapeindex');
 
 
 var data_xml_template = fs.readFileSync('data.xml.template', 'utf8');
-function generateDataXml(layerName, bbox) {
-    return data_xml_template.replace(/\{layerName\}/g, layerName).replace(/\{bbox\}/g, bbox.join(',')); // Have to use regex for global (g) option (like sed)
+function generateDataXml(layerName, bbox, pgsql_db) {
+    return data_xml_template.replace(/\{layerName\}/g, layerName)
+        .replace(/\{bbox\}/g, bbox.join(','))
+        .replace(/\{database\}/g, pgsql_db); // Have to use regex for global (g) option (like sed)
 }
 
 function processLayer(layerName) {
@@ -74,11 +77,12 @@ function processLayer(layerName) {
     var returnData = {};
 
     return when().then(function() {
+        console.log('Converting ' + layerName + ' to Web Mercator projection');
         return execPromise('"C:\\Program Files\\GDAL\\GDALShell.bat" && ogr2ogr -t_srs EPSG:3857 -clipsrc -180 -85.0511 180 85.0511 -overwrite -f "ESRI Shapefile" ' + layerDir.slice(0,-1) + ' ' + shapefile_dir + layerName + '.shp');
     }).then(function() {
         // Run shp2pgsql
-        //console.log('Converting ' + layerName + ' to PostGIS table');
-        //return execPromise(pgsql_dir + 'shp2pgsql -s 3857 -k -d -I ' + layerDir + layerName + ' public.' + layerName + ' | ' + pgsql_dir + 'psql -U postgres -d region_mapping -w > nul');
+        console.log('Converting ' + layerName + ' to PostGIS table');
+        return execPromise(pgsql_dir + 'shp2pgsql -s 3857 -k -d -I ' + layerDir + layerName + ' public.' + layerName + ' | ' + pgsql_dir + 'psql -U postgres -d ' + pgsql_db + ' -w > nul'); // Change nul to /dev/null for POSIX
     }).then(function() {
         var reader = shapefile.reader(layerDir + layerName + '.shp');
         return nodefn.call(reader.readHeader.bind(reader));
@@ -96,7 +100,7 @@ function processLayer(layerName) {
                 bbox: bbox
             }
         };
-        return fs.writeFilePromise(dataXmlFile, generateDataXml(layerName, bbox));
+        return fs.writeFilePromise(dataXmlFile, generateDataXml(layerName, bbox, pgsql_db));
     }).then(function() {
         // Generate mbtiles
         console.log('Running tile generation for ' + layerName);
@@ -110,44 +114,49 @@ function processLayer(layerName) {
         ]})).yield(returnData);
     }).catch(function(err) {
         console.log('Layer ' + layerName + ' failed with error: ' + err);
-        return null;
+        throw err;
     });
 }
 
 
 // Read JSON file and extract layer names
 var regionMappingJson = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-// Construct a set of layers (layers are sometimes duplicated. Set is used to remove duplicates)
-var layers = new Set(["FID_SA4_2011_AUST", "FID_SA3_2011_AUST", "FID_SA2_2011_AUST"]);
-console.log(layers);
 var regionMaps = Object.keys(regionMappingJson.regionWmsMap);
-/*for (var i = 0; i < regionMaps.length; i++) {
-    layers.add(regionMappingJson.regionWmsMap[regionMaps[i]].layerName.replace('region_map:', ''));
-}*/
 
-var configJson = {};
+var layers = {};//{FID_SSC_2011_AUST: false};
+for (var i = 0; i < regionMaps.length; i++) {
+    layers[regionMappingJson.regionWmsMap[regionMaps[i]].layerName.replace('region_map:', '')] = false;
+}
+
 
 // Only allow const_parallel_limit number of concurrent processLayer requests
 var guardedProcessLayer = guard(guard.n(const_parallel_limit), processLayer);
+var configJson = {};
 
-var layer_array = [];
-layers.forEach(function(entry) {
-    layer_array.push(entry);
-});
+var exitCode = 0;
 
-var layer_data = {};
-when.map(layer_array.map(guardedProcessLayer), function(data) {
+when.map(Object.keys(layers).map(guardedProcessLayer), function(data) {
     // Add layer data to layers as each layer finishes processing
     if (data) {
         configJson['/' + data.layerName] = data.config;
-        layer_data[data.layerName] = data.regionMapping;
+        layers[data.layerName] = data.regionMapping;
     }
+}).catch(function(err) {
+    console.log('Ending processing early due to errors');
+    var unfinishedLayers = {};
+    Object.keys(layers).forEach(function(layerName) { // Filter out finished layers
+        if (!layers[layerName]) {
+            unfinishedLayers[layerName] = false;
+        }
+    });
+    exitCode = 1;
+    return fs.writeFilePromise('unfinished_layers.json', JSON.stringify(unfinishedLayers, null, 4));
 }).then(function() {
     // Once all layers have finished processing
     for (var i = 0; i < regionMaps.length; i++) {
         var layerName = regionMappingJson.regionWmsMap[regionMaps[i]].layerName.replace('region_map:', '');
-        if (layer_data[layerName]) {
-            Object.assign(regionMappingJson.regionWmsMap[regionMaps[i]], layer_data[layerName]); // Update properties
+        if (layers[layerName]) {
+            Object.assign(regionMappingJson.regionWmsMap[regionMaps[i]], layers[layerName]); // Update properties
         }
     }
 
@@ -155,4 +164,4 @@ when.map(layer_array.map(guardedProcessLayer), function(data) {
         fs.writeFilePromise('config.json', JSON.stringify(configJson, null, 4)),
         fs.writeFilePromise('regionMapping_out.json', JSON.stringify(regionMappingJson, null, 2))
     );
-});
+}).then(function() { process.exit(exitCode); });
