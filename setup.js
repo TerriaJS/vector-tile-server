@@ -53,16 +53,17 @@ var const_maxGenZ = 10;
 var const_parallel_limit = 3;
 
 
-var directory = 'data5/';
+var directory = 'data2/';
 var shapefile_dir = 'geoserver_shapefiles/';
-var pgsql_dir = 'c:\\PROGRA~1\\PostgreSQL\\9.5\\bin\\';
-var pgsql_db = 'region_mapping3';
+var pgsql_dir = ''; // 'C:\\PROGRA~1\\PostgreSQL\\9.5\\bin\\';
+var gdal_env_setup = '';//'"C:\\Program Files\\GDAL\\GDALShell.bat" && ';
+var pgsql_db = 'region_mapping';
 
 // From mapnik/bin/mapnik-shapeindex.js
 var shapeindex = path.join(path.dirname( binary.find(require.resolve('mapnik/package.json')) ), 'shapeindex');
 
 
-var data_xml_template = fs.readFileSync('data.xml.template', 'utf8');
+var data_xml_template = fs.readFileSync('data.xml.shptemplate', 'utf8'); // Use shapefile template
 function generateDataXml(layerName, bbox, pgsql_db) {
     return data_xml_template.replace(/\{layerName\}/g, layerName)
         .replace(/\{bbox\}/g, bbox.join(','))
@@ -78,7 +79,7 @@ function processLayer(layerName) {
 
     return when().then(function() {
         console.log('Converting ' + layerName + ' to Web Mercator projection');
-        return execPromise('"C:\\Program Files\\GDAL\\GDALShell.bat" && ogr2ogr -t_srs EPSG:3857 -clipsrc -180 -85.0511 180 85.0511 -overwrite -f "ESRI Shapefile" ' + layerDir.slice(0,-1) + ' ' + shapefile_dir + layerName + '.shp');
+        return execPromise(gdal_env_setup + 'ogr2ogr -t_srs EPSG:3857 -clipsrc -180 -85.0511 180 85.0511 -overwrite -f "ESRI Shapefile" ' + layerDir.slice(0,-1) + ' ' + shapefile_dir + layerName + '.shp');
     }).then(function() {
         // Run shp2pgsql
         console.log('Converting ' + layerName + ' to PostGIS table');
@@ -104,6 +105,7 @@ function processLayer(layerName) {
     }).then(function() {
         // Generate mbtiles
         console.log('Running tile generation for ' + layerName);
+        //return execPromise('echo node save_tiles.js ' + [dataXmlFile, mbtilesFile, const_minZ, const_maxGenZ].concat(returnData.regionMapping.bbox).join(' ') + ' > ' + mbtilesFile + '.txt');
         return execPromise('node save_tiles.js ' + [dataXmlFile, mbtilesFile, const_minZ, const_maxGenZ].concat(returnData.regionMapping.bbox).join(' '));
     }).then(function() {
         // Write out hybrid.json
@@ -142,6 +144,9 @@ when.map(Object.keys(layers).map(guardedProcessLayer), function(data) {
         layers[data.layerName] = data.regionMapping;
     }
 }).catch(function(err) {
+    // Output the layers that aren't done if there is an error so that it is possible to only process these in another run
+    // Replacing layers = {}; with layers = JSON.parse(fs.readFileSync('unfinished_layers.json'));
+    // and commenting out the loop below that line will run the setup script for only the layers that were not finished in the last run
     console.log('Ending processing early due to errors');
     var unfinishedLayers = {};
     Object.keys(layers).forEach(function(layerName) { // Filter out finished layers
