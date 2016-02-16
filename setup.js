@@ -53,7 +53,7 @@ var const_maxGenZ = 10;
 var const_parallel_limit = 3;
 
 
-var directory = 'data5/';
+var directory = 'data2/';
 var shapefile_dir = 'geoserver_shapefiles/';
 var pgsql_dir = 'c:\\PROGRA~1\\PostgreSQL\\9.5\\bin\\';
 var pgsql_db = 'region_mapping3';
@@ -97,6 +97,7 @@ function processLayer(layerName) {
                     url: "http://127.0.0.1:8000/" + layerName + "/{z}/{x}/{y}.pbf",
                     subdomains: undefined
                 },
+                serverType: "vector",
                 bbox: bbox
             }
         };
@@ -104,7 +105,7 @@ function processLayer(layerName) {
     }).then(function() {
         // Generate mbtiles
         console.log('Running tile generation for ' + layerName);
-        return execPromise('node save_tiles.js ' + [dataXmlFile, mbtilesFile, const_minZ, const_maxGenZ].concat(returnData.regionMapping.bbox).join(' '));
+        //return execPromise('node save_tiles.js ' + [dataXmlFile, mbtilesFile, const_minZ, const_maxGenZ].concat(returnData.regionMapping.bbox).join(' '));
     }).then(function() {
         // Write out hybrid.json
         console.log('Tile generation finished for ' + layerName);
@@ -159,7 +160,7 @@ when.map(Object.keys(layers).map(guardedProcessLayer), function(data) {
             Object.assign(regionMappingJson.regionWmsMap[regionMaps[i]], layers[layerName]); // Update properties
         }
     }
-
+    
     return when.join(
         fs.writeFilePromise('config.json', JSON.stringify(configJson, null, 4)),
         fs.writeFilePromise('regionMapping_out.json', JSON.stringify(regionMappingJson, null, 2))
