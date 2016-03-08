@@ -4,6 +4,8 @@
 // Call save_tiles as follows:
 //    node save_tiles.js /absolute/path/to/mapnikXml /absolute/path/to/mbtiles minZ maxZ w s e n
 
+// node save_tiles.js data/FID_SA2_2011_AUST/data.xml data/FID_SA2_2011_AUST/store2.mbtiles 0 10 96.816941408 -43.74050960300004 159.109219008 -9.142175977000017
+
 var tilelive = require('tilelive');
 require('tilelive-bridge').registerProtocols(tilelive);
 var MBTiles = require('mbtiles');//.registerProtocols(tilelive);
@@ -22,6 +24,7 @@ var rectangle = process.argv.slice(6,10); //[96.816941408,-43.740509603000035,15
 
 function copyTile(z,x,y,source,dest) {
     return nodefn.call(source.getTile.bind(source), z,x,y).then(function (args) {
+        //console.log(z, args[0].length);
         return nodefn.call(dest.putTile.bind(dest), z, x, y, args[0]).yield(1); // 1 tile drawn
     }, function (err) {
         console.log([z,x,y].join('/'));
@@ -120,4 +123,4 @@ when.all([ // Initialise source and mbtiles
     }).then(function () {
         //console.log('Closed');
     });
-});//.otherwise(console.log).then(function() { process.exit(); });
+}).otherwise(console.log).then(function() { process.exit(); });
