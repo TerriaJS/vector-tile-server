@@ -66,7 +66,7 @@ if (typeof Object.assign != 'function') {
 }
 
 
-var data_xml_template = fs.readFileSync('data.xml.shptemplate', 'utf8'); // Use shapefile template
+var data_xml_template = fs.readFileSync('data.xml.template', 'utf8'); // Use shapefile template
 function generateDataXml(layerName, bbox, pgsql_db) {
     return data_xml_template.replace(/\{layerName\}/g, layerName).replace(/\{bbox\}/g, bbox.join(',')); // Have to use regex for global (g) option (like sed)
 }
