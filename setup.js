@@ -63,7 +63,7 @@ var pgsql_db = 'region_mapping';
 var shapeindex = path.join(path.dirname( binary.find(require.resolve('mapnik/package.json')) ), 'shapeindex');
 
 
-var data_xml_template = fs.readFileSync('data.xml.shptemplate', 'utf8'); // Use shapefile template
+var data_xml_template = fs.readFileSync('data.xml.template', 'utf8');
 function generateDataXml(layerName, bbox, pgsql_db) {
     return data_xml_template.replace(/\{layerName\}/g, layerName)
         .replace(/\{bbox\}/g, bbox.join(','))
@@ -165,7 +165,7 @@ when.map(Object.keys(layers).map(guardedProcessLayer), function(data) {
             Object.assign(regionMappingJson.regionWmsMap[regionMaps[i]], layers[layerName]); // Update properties
         }
     }
-    
+
     return when.join(
         fs.writeFilePromise('config.json', JSON.stringify(configJson, null, 4)),
         fs.writeFilePromise('regionMapping_out.json', JSON.stringify(regionMappingJson, null, 2))
