@@ -1,6 +1,13 @@
 # server-config
 Configuration, data and helper scripts for [Tessera server](https://github.com/mojodna/tessera). Designed to work as a vector tile server for [TerriaJS](https://github.com/TerriaJS/terriajs)
 
+## Packages involved:
+This server uses the Tessera server and tilelive module architecture. It uses various customised forks and specific modules. These are:
+- Tessera – forked to allow for forked dependencies, and also stripped down (leaflet map removed and static page serving commented out)
+- tilelive-bridge – forked to return 0 length buffer instead of an error when a vector tile is empty
+- tilelive-hybrid – a new tilelive module that serves tiles from different tilelive sources based on the zoom level
+- tilelive-cache – forked to ask tilelive-hybrid sources whether they want a tile cached or not and to change the cache duration from 6 hours to 1 year
+
 ## Steps to install:
 1. Clone from github
 2. Get original shapefiles (on regionmap-dev, cannot use the ones retrieved by WFS from Geoserver as these have attributes with bad type information)

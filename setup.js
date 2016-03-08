@@ -3,6 +3,7 @@
 //
 //    node setup.js path/to/regionMapping.json
 //
+'use strict';
 
 var exec = require('child_process').exec;
 
@@ -20,11 +21,30 @@ fs.writeFilePromise = nodefn.lift(fs.writeFile);
 var execPromise = nodefn.lift(exec);
 
 
+var const_maxZ = 20;
+var const_minZ = 0;
+var const_maxGenZ = 10;
+
+var const_parallel_limit = 3;
+
+var steps = {
+    reprojection: false,
+    tileGeneration: false,
+    config: true
+}
+
+
+var directory = 'data2/';
+var shapefile_dir = 'geoserver_shapefiles/';
+var gdal_env_setup = /*'';//*/ '"C:\\Program Files\\GDAL\\GDALShell.bat" && ';
+
+// From mapnik/bin/mapnik-shapeindex.js
+var shapeindex = path.join(path.dirname( binary.find(require.resolve('mapnik/package.json')) ), 'shapeindex');
+
 // From Mozilla MDN. Polyfill for old Node versions
 if (typeof Object.assign != 'function') {
   (function () {
     Object.assign = function (target) {
-      'use strict';
       if (target === undefined || target === null) {
         throw new TypeError('Cannot convert undefined or null to object');
       }
@@ -46,28 +66,9 @@ if (typeof Object.assign != 'function') {
 }
 
 
-var const_maxZ = 20;
-var const_minZ = 0;
-var const_maxGenZ = 10;
-
-var const_parallel_limit = 3;
-
-
-var directory = 'data2/';
-var shapefile_dir = 'geoserver_shapefiles/';
-var pgsql_dir = ''; // 'C:\\PROGRA~1\\PostgreSQL\\9.5\\bin\\';
-var gdal_env_setup = '';//'"C:\\Program Files\\GDAL\\GDALShell.bat" && ';
-var pgsql_db = 'region_mapping';
-
-// From mapnik/bin/mapnik-shapeindex.js
-var shapeindex = path.join(path.dirname( binary.find(require.resolve('mapnik/package.json')) ), 'shapeindex');
-
-
 var data_xml_template = fs.readFileSync('data.xml.shptemplate', 'utf8'); // Use shapefile template
 function generateDataXml(layerName, bbox, pgsql_db) {
-    return data_xml_template.replace(/\{layerName\}/g, layerName)
-        .replace(/\{bbox\}/g, bbox.join(','))
-        .replace(/\{database\}/g, pgsql_db); // Have to use regex for global (g) option (like sed)
+    return data_xml_template.replace(/\{layerName\}/g, layerName).replace(/\{bbox\}/g, bbox.join(',')); // Have to use regex for global (g) option (like sed)
 }
 
 function processLayer(layerName) {
@@ -78,41 +79,41 @@ function processLayer(layerName) {
     var returnData = {};
 
     return when().then(function() {
+        if (!steps.reproject) return;
         console.log('Converting ' + layerName + ' to Web Mercator projection');
         return execPromise(gdal_env_setup + 'ogr2ogr -t_srs EPSG:3857 -clipsrc -180 -85.0511 180 85.0511 -overwrite -f "ESRI Shapefile" ' + layerDir.slice(0,-1) + ' ' + shapefile_dir + layerName + '.shp');
     }).then(function() {
-        // Run shp2pgsql
-        console.log('Converting ' + layerName + ' to PostGIS table');
-        return execPromise(pgsql_dir + 'shp2pgsql -s 3857 -k -d -I ' + layerDir + layerName + ' public.' + layerName + ' | ' + pgsql_dir + 'psql -U postgres -d ' + pgsql_db + ' -w > nul'); // Change nul to /dev/null for POSIX
-    }).then(function() {
+        if (!steps.config) return;
         var reader = shapefile.reader(layerDir + layerName + '.shp');
         return nodefn.call(reader.readHeader.bind(reader));
     }).then(function(header) {
+        if (!steps.config) return;
         var bbox = merc.convert(header.bbox, "WGS84");
         returnData = {
             layerName: layerName,
-            config: {"source": "hybrid://" + path.resolve(hybridJsonFile)},
+            config: {source: "hybrid://" + path.resolve(hybridJsonFile), minZ: const_minZ, maxZ: const_maxZ},
             regionMapping: {
                 layerName: layerName,
-                server: {
-                    url: "http://127.0.0.1:8000/" + layerName + "/{z}/{x}/{y}.pbf",
-                    subdomains: undefined
-                },
+                server: "http://127.0.0.1:8000/" + layerName + "/{z}/{x}/{y}.pbf",
+                serverType: "MVT",
+                serverSubdomains: undefined,
                 bbox: bbox
             }
         };
-        return fs.writeFilePromise(dataXmlFile, generateDataXml(layerName, bbox, pgsql_db));
+        return fs.writeFilePromise(dataXmlFile, generateDataXml(layerName, bbox)); //, pgsql_db));
     }).then(function() {
+        if (!steps.tileGeneration) return;
         // Generate mbtiles
         console.log('Running tile generation for ' + layerName);
         //return execPromise('echo node save_tiles.js ' + [dataXmlFile, mbtilesFile, const_minZ, const_maxGenZ].concat(returnData.regionMapping.bbox).join(' ') + ' > ' + mbtilesFile + '.txt');
         return execPromise('node save_tiles.js ' + [dataXmlFile, mbtilesFile, const_minZ, const_maxGenZ].concat(returnData.regionMapping.bbox).join(' '));
     }).then(function() {
+        if (!steps.config) return;
         // Write out hybrid.json
         console.log('Tile generation finished for ' + layerName);
-        return fs.writeFilePromise(hybridJsonFile, JSON.stringify({"sources": [
-            {"source": "mbtiles://" + path.resolve(mbtilesFile), "minZ": const_minZ, "maxZ": const_maxGenZ},
-            {"source": "bridge://" + path.resolve(dataXmlFile), "minZ": const_minZ, "maxZ": const_maxZ}
+        return fs.writeFilePromise(hybridJsonFile, JSON.stringify({sources: [
+            {source: "mbtiles://" + path.resolve(mbtilesFile), minZ: const_minZ, maxZ: const_maxGenZ},
+            {source: "bridge://" + path.resolve(dataXmlFile), minZ: const_minZ, maxZ: const_maxZ}
         ]})).yield(returnData);
     }).catch(function(err) {
         console.log('Layer ' + layerName + ' failed with error: ' + err);
@@ -125,10 +126,10 @@ function processLayer(layerName) {
 var regionMappingJson = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 var regionMaps = Object.keys(regionMappingJson.regionWmsMap);
 
-var layers = {};//{FID_SSC_2011_AUST: false};
+var layers = /*{};
 for (var i = 0; i < regionMaps.length; i++) {
     layers[regionMappingJson.regionWmsMap[regionMaps[i]].layerName.replace('region_map:', '')] = false;
-}
+}*/ {FID_SA4_2011_AUST: false, FID_SA2_2011_AUST: false};
 
 
 // Only allow const_parallel_limit number of concurrent processLayer requests
@@ -162,6 +163,13 @@ when.map(Object.keys(layers).map(guardedProcessLayer), function(data) {
         var layerName = regionMappingJson.regionWmsMap[regionMaps[i]].layerName.replace('region_map:', '');
         if (layers[layerName]) {
             Object.assign(regionMappingJson.regionWmsMap[regionMaps[i]], layers[layerName]); // Update properties
+        }
+        else {
+            // Use WMS for this layer
+            Object.assign(regionMappingJson.regionWmsMap[regionMaps[i]], {server: {
+                url: regionMappingJson.regionWmsMap[regionMaps[i]].server,
+                type: "WMS"
+            }});
         }
     }
 
