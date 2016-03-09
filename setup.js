@@ -79,14 +79,17 @@ function processLayer(layerName) {
     var returnData = {};
 
     return when().then(function() {
+        // Reproject to EPSG:3857
         if (!steps.reproject) return;
         console.log('Converting ' + layerName + ' to Web Mercator projection');
         return execPromise(gdal_env_setup + 'ogr2ogr -t_srs EPSG:3857 -clipsrc -180 -85.0511 180 85.0511 -overwrite -f "ESRI Shapefile" ' + layerDir.slice(0,-1) + ' ' + shapefile_dir + layerName + '.shp');
     }).then(function() {
+        // Get info from new shapefile
         if (!steps.config) return;
         var reader = shapefile.reader(layerDir + layerName + '.shp');
         return nodefn.call(reader.readHeader.bind(reader));
     }).then(function(header) {
+        // Create config.json and regionMapping.json entry
         if (!steps.config) return;
         var bbox = merc.convert(header.bbox, "WGS84");
         returnData = {

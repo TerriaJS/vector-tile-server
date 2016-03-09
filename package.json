@@ -2,7 +2,7 @@
   "dependencies": {
     "download-file": "^0.1.5",
     "extract-zip": "^1.4.1",
-    "mapnik": "^3.4.14",
+    "mapnik": "~3.5.0",
     "mbtiles": "^0.8.2",
     "node-pre-gyp": "^0.6.19",
     "shapefile": "^0.3.1",
