@@ -25,7 +25,9 @@
 
 2. Reproject the shapefiles to EPSG:3857
 
-2. Compile Mapnik from source (need to checkout and build commit 2b725dd, since the binary format changes not long after that commit and that wouldn't be compatible). _Actually, it looks like this issue has been solved since the bug fix and the binary change are in Mapnik v3.0.10, which is the binary version included in node-mapnik 3.5.0, which is the version the latest tilelive-bridge uses. This means I can update to the new binary format of shapeindex and not need to compile Mapnik from source (I think)._
+2. Compile Mapnik from source (need to checkout and build commit 2b725dd, since the binary format changes not long after that commit and that wouldn't be compatible).
+
+    _Actually, it looks like this issue has been solved since the bug fix and the binary change are in Mapnik v3.0.10, which is the binary version included in node-mapnik 3.5.0, which is the version the latest tilelive-bridge uses. This means I can update to the new binary format of shapeindex and not need to compile Mapnik from source (I think)._
 
 3. Generate shapeindexes `find . -name *.shp -print0 | xargs -0 shapeindex` or within `setup.js` if node-mapnik shapeindex is used
 
