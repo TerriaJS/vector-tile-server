@@ -132,7 +132,7 @@ var regionMaps = Object.keys(regionMappingJson.regionWmsMap);
 var layers = /*{};
 for (var i = 0; i < regionMaps.length; i++) {
     layers[regionMappingJson.regionWmsMap[regionMaps[i]].layerName.replace('region_map:', '')] = false;
-}*/ {FID_SA4_2011_AUST: false, FID_SA2_2011_AUST: false};
+}*/ {FID_SA4_2011_AUST: false, FID_SA2_2011_AUST: false, FID_TM_WORLD_BORDERS: false};
 
 
 // Only allow const_parallel_limit number of concurrent processLayer requests
@@ -169,10 +169,10 @@ when.map(Object.keys(layers).map(guardedProcessLayer), function(data) {
         }
         else {
             // Use WMS for this layer
-            Object.assign(regionMappingJson.regionWmsMap[regionMaps[i]], {server: {
-                url: regionMappingJson.regionWmsMap[regionMaps[i]].server,
-                type: "WMS"
-            }});
+            Object.assign(regionMappingJson.regionWmsMap[regionMaps[i]], {
+                server: regionMappingJson.regionWmsMap[regionMaps[i]].server,
+                serverType: "WMS"
+            });
         }
     }
 
