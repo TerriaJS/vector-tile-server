@@ -7,7 +7,11 @@
 
 # Method for setting up standard vector tile server:
 
-## Download and run the server
+## Download and test the server
+
+1. Checkout `mapbox_vt_region_provider` branches of nationalmap and TerriaJS
+
+1. Rebuild nationalmap
 
 1. Clone the server from Github:
     `git clone https://github.com/TerriaJS/server-config`
@@ -15,9 +19,13 @@
 2. Install dependencies of the server:
     `npm install`
 
-3. Extract the data and configuration files from the provided (somewhere...) archive
+3. Extract the data folder (called `data2/`) from the provided archive (https://dl.dropboxusercontent.com/u/18091071/MVTResources.zip) into the root directory of the repo
 
 4. Run the server `./server.sh`
+
+5. Test the server using `SA2`, `SA4` and `WORLD_BORDERS` region maps. Other region types will use WMS (so you can compare the two easily).
+    - ABS has 2011 Census data for testing WMS (`SA3`) and MVT (`SA2`, `SA4`)
+    - The `test` init file has `Country Regions` and `Droughts by Country` which both use `WORLD_BORDERS`
 
 ## If you want to re-generate shapeindex files and mbtiles cache
 
