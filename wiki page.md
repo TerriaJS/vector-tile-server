@@ -21,6 +21,8 @@
 
 3. Extract the data folder (called `data2/`) from the provided archive (https://dl.dropboxusercontent.com/u/18091071/MVTResources.zip) into the root directory of the repo
 
+3. Build the config files with `node setup.js regionMapping.json`
+
 4. Run the server `./server.sh`
 
 5. Test the server using `SA2`, `SA4` and `WORLD_BORDERS` region maps. Other region types will use WMS (so you can compare the two easily).
