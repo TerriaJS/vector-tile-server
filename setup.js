@@ -87,10 +87,43 @@ function processLayer(layerName) {
         // Get info from new shapefile
         if (!steps.config) return;
         var reader = shapefile.reader(layerDir + layerName + '.shp');
-        return nodefn.call(reader.readHeader.bind(reader));
-    }).then(function(header) {
+
+        // Get header and then the first record and return both
+        return nodefn.call(reader.readHeader.bind(reader)).then(function(header) {
+            return when.join(header, nodefn.call(reader.readRecord.bind(reader)));
+        });
+    }).then(function(shapeinfo) {
         // Create config.json and regionMapping.json entry
         if (!steps.config) return;
+        var header = shapeinfo[0];
+        var record = shapeinfo[1];
+
+        // Adapted from Cesium ImageryLayerFeatureInfo.js (https://github.com/AnalyticalGraphicsInc/cesium/blob/1.19/Source/Scene/ImageryLayerFeatureInfo.js#L57)
+        // ================================================================================
+        var namePropertyPrecedence = 10;
+        var nameProperty;
+
+        for (var key in record.properties) {
+            if (record.properties.hasOwnProperty(key) && record.properties[key]) {
+                var lowerKey = key.toLowerCase();
+
+                if (namePropertyPrecedence > 1 && lowerKey === 'name') {
+                    namePropertyPrecedence = 1;
+                    nameProperty = key;
+                } else if (namePropertyPrecedence > 2 && lowerKey === 'title') {
+                    namePropertyPrecedence = 2;
+                    nameProperty = key;
+                } else if (namePropertyPrecedence > 3 && /name/i.test(key)) {
+                    namePropertyPrecedence = 3;
+                    nameProperty = key;
+                } else if (namePropertyPrecedence > 4 && /title/i.test(key)) {
+                    namePropertyPrecedence = 4;
+                    nameProperty = key;
+                }
+            }
+        }
+        // ================================================================================
+
         var bbox = merc.convert(header.bbox, "WGS84");
         returnData = {
             layerName: layerName,
@@ -100,7 +133,8 @@ function processLayer(layerName) {
                 server: "http://127.0.0.1:8000/" + layerName + "/{z}/{x}/{y}.pbf",
                 serverType: "MVT",
                 serverSubdomains: undefined,
-                bbox: bbox
+                bbox: bbox,
+                nameProp: nameProperty
             }
         };
         return fs.writeFilePromise(dataXmlFile, generateDataXml(layerName, bbox)); //, pgsql_db));
