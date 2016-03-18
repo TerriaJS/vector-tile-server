@@ -1,5 +1,5 @@
-# server-config
-Configuration, data and helper scripts for [Tessera server](https://github.com/mojodna/tessera). Designed to work as a vector tile server for [TerriaJS](https://github.com/TerriaJS/terriajs)
+# Vector-Tile-Server
+This sets up a [Tessera server](https://github.com/mojodna/tessera) for use as a vector tile server for [TerriaJS](https://github.com/TerriaJS/terriajs). It contains configuration, data and helper scripts. 
 
 ## Packages involved:
 This server uses the Tessera server and tilelive module architecture. It uses various customised forks and specific modules. These are:
