@@ -24,7 +24,7 @@ config = {
     "shapefile": "okcounties.shp",
     "generateTilesTo": 10,
     "addFID": true,
-//    "uniqueIdProp": undefined,                       // Defaults to FID, but must be set when addFID is false
+//    "uniqueIdProp": undefined,                     // Defaults to FID, but must be set when addFID is false
     "server": "http://127.0.0.1:8000/okcounties/{z}/{x}/{y}.pbf",      // May need to be corrected
     "serverSubdomains": [],
 
@@ -138,31 +138,48 @@ function processLayer(c) {
     }).then(function() {
         // Get info from new shapefile
         if (!steps.config) return;
+
+        var columns = {};
+
+        Object.keys(c.regionMappingEntries).forEach(function (key) {
+            if (c.regionMappingEntries[key].regionProp) {
+                columns[c.regionMappingEntries[key].regionProp] = true;
+            }
+            if (c.regionMappingEntries[key].disambigProp) {
+                columns[c.regionMappingEntries[key].disambigProp] = true;
+            }
+        })
+
+        region_mapJSONs = Object.keys(columns).map(function(column) {
+            return {
+                "layer": c.layerName,
+                "property": column,
+                "values": []
+            };
+        });
+
         var reader = shapefile.reader(layerDir + c.layerName + '.shp');
-
-        region_mapJSON = { // Have to generate 1 of these per regionMappingEntries (except for duplicates. Probably build an object of codes to ensure that each is unique)
-            "layer": c.layerName,
-            "property": c.regionMappingEntries.okcounty.regionProp,
-            "values": []
-        };
-
         return nodefn.call(reader.readHeader.bind(reader)).then(function(header) {
-
-
-
-            return when.iterate(nodefn.lift(reader.readHeader.bind(reader)), function(record) { record === shapefile.end; }, function(record) {
+            // Iterate over records until shapefile.end
+            return when.iterate(nodefn.lift(reader.readRecord.bind(reader)), function(record) { record === shapefile.end; }, function(record) {
                 // For each record in the shapefile:
                 // - Add the value of the specific property to the array
-                region_mapJSON.values.push(record.properties[region_mapJSON.property]);
+                region_mapJSONs.forEach(function(json) {
+                    json.values.push(record.properties[json.property]);
+                });
             }).then(function() {
                 // Save region_map json files
+                return when.all(region_mapJSONs.map(function(json) {
+                    return fs.writeFilePromise('region_map-' + json.layer + '_' + json.property + '.json');
+                }));
             });
+            return header.bbox;
         });
-    }).then(function(shapeinfo) {
+    }).then(function(/*shapeinfo*/bbox) {
         // Create config.json and regionMapping.json entry
         if (!steps.config) return;
-        var header = shapeinfo[0];
-        var record = shapeinfo[1];
+        /*var header = shapeinfo[0];
+        var record = shapeinfo[1];*/
 
         /* Not needed in nameProp is provided
 
@@ -193,10 +210,9 @@ function processLayer(c) {
         // ================================================================================
         */
 
-        var bbox = merc.convert(header.bbox, "WGS84");
+        var bbox = merc.convert(/*header.*/bbox, "WGS84");
         returnData = {
             layerName: layerName,
-            config: {source: "hybrid://" + path.resolve(hybridJsonFile), minZ: const_minZ, maxZ: const_maxZ},
             regionMapping: {
                 layerName: layerName,
                 server: "http://127.0.0.1:8000/" + layerName + "/{z}/{x}/{y}.pbf",
@@ -206,21 +222,26 @@ function processLayer(c) {
                 nameProp: nameProperty
             }
         };
-        return fs.writeFilePromise(dataXmlFile, generateDataXml(layerName, bbox)); //, pgsql_db));
+        return fs.writeFilePromise(dataXmlFile, generateDataXml(layerName, bbox));
     }).then(function() {
-        if (!steps.tileGeneration) return;
+        if (c.generateTilesTo == null) return;
         // Generate mbtiles
         console.log('Running tile generation for ' + layerName);
         //return execPromise('echo node save_tiles.js ' + [dataXmlFile, mbtilesFile, const_minZ, const_maxGenZ].concat(returnData.regionMapping.bbox).join(' ') + ' > ' + mbtilesFile + '.txt');
-        return execPromise('node save_tiles.js ' + [dataXmlFile, mbtilesFile, const_minZ, const_maxGenZ].concat(returnData.regionMapping.bbox).join(' '));
+        return execPromise('node save_tiles.js ' + [dataXmlFile, mbtilesFile, const_minZ, c.generateTilesTo].concat(returnData.regionMapping.bbox).join(' '));
     }).then(function() {
         if (!steps.config) return;
         // Write out hybrid.json
         console.log('Tile generation finished for ' + layerName);
         return fs.writeFilePromise(hybridJsonFile, JSON.stringify({sources: [
-            {source: "mbtiles://" + path.resolve(mbtilesFile), minZ: const_minZ, maxZ: const_maxGenZ},
+            {source: "mbtiles://" + path.resolve(mbtilesFile), minZ: const_minZ, maxZ: c.generateTilesTo},
             {source: "bridge://" + path.resolve(dataXmlFile), minZ: const_minZ, maxZ: const_maxZ}
         ]})).yield(returnData);
+    }).then(function() {
+        // Append layer to config.json
+        var configJson = JSON.parse(fs.readFileSync('config.json', 'utf8'));
+        configJson[c.layerName] = {source: "hybrid://" + path.resolve(hybridJsonFile), minZ: const_minZ, maxZ: const_maxZ};
+        return fs.writeFilePromise('config.json', JSON.stringify(configJson, null, 4));
     }).catch(function(err) {
         console.log('Layer ' + layerName + ' failed with error: ' + err);
         throw err;
@@ -228,41 +249,6 @@ function processLayer(c) {
 }
 
 
-// Read JSON file and extract layer names
-var regionMappingJson = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-var regionMaps = Object.keys(regionMappingJson.regionWmsMap);
-
-var layers = /*{};
-for (var i = 0; i < regionMaps.length; i++) {
-    layers[regionMappingJson.regionWmsMap[regionMaps[i]].layerName.replace('region_map:', '')] = false;
-}*/ {FID_SA4_2011_AUST: false, FID_SA2_2011_AUST: false, FID_TM_WORLD_BORDERS: false};
-
-
-// Only allow const_parallel_limit number of concurrent processLayer requests
-var guardedProcessLayer = guard(guard.n(const_parallel_limit), processLayer);
-var configJson = {};
-
-var exitCode = 0;
-
-when.map(Object.keys(layers).map(guardedProcessLayer), function(data) {
-    // Add layer data to layers as each layer finishes processing
-    if (data) {
-        configJson['/' + data.layerName] = data.config;
-        layers[data.layerName] = data.regionMapping;
-    }
-}).catch(function(err) {
-    // Output the layers that aren't done if there is an error so that it is possible to only process these in another run
-    // Replacing layers = {}; with layers = JSON.parse(fs.readFileSync('unfinished_layers.json'));
-    // and commenting out the loop below that line will run the setup script for only the layers that were not finished in the last run
-    console.log('Ending processing early due to errors');
-    var unfinishedLayers = {};
-    Object.keys(layers).forEach(function(layerName) { // Filter out finished layers
-        if (!layers[layerName]) {
-            unfinishedLayers[layerName] = false;
-        }
-    });
-    exitCode = 1;
-    return fs.writeFilePromise('unfinished_layers.json', JSON.stringify(unfinishedLayers, null, 4));
 }).then(function() {
     // Once all layers have finished processing
     for (var i = 0; i < regionMaps.length; i++) {
