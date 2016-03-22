@@ -86,7 +86,7 @@ var steps = {
 
 var directory = 'data2/';
 var shapefile_dir = 'geoserver_shapefiles/';
-var gdal_env_setup = /*'';//*/ '"C:\\Program Files\\GDAL\\GDALShell.bat" && ';
+var gdal_env_setup = '';// '"C:\\Program Files\\GDAL\\GDALShell.bat" && ';
 
 // From mapnik/bin/mapnik-shapeindex.js
 var shapeindex = path.join(path.dirname( binary.find(require.resolve('mapnik/package.json')) ), 'shapeindex');
@@ -126,19 +126,23 @@ function processLayer(c) {
     var hybridJsonFile = layerDir + 'hybrid.json';
     var dataXmlFile = layerDir + 'data.xml';
     var mbtilesFile = layerDir + 'store.mbtiles';
+    var layerRectangle;
     var returnData = {};
 
     return when().then(function() {
         // Reproject to EPSG:3857 and add an FID
-        if (!steps.reproject) return;
+        if (!steps.reprojection) return;
         console.log('Converting ' + c.layerName + ' to Web Mercator projection');
-        var fidCommand = c.addFID ? "-sql 'select FID,* from " + c.layerName + "'" : '';
+
+        // Add an FID if the input config
+        var fidCommand = c.addFID ? " -sql 'select FID,* from " + c.layerName + "'" : '';
         return execPromise(gdal_env_setup + 'ogr2ogr -t_srs EPSG:3857 -clipsrc -180 -85.0511 180 85.0511 -overwrite -f "ESRI Shapefile" '
-                           + layerDir.slice(0,-1) + ' ' + shapefile_dir + c.layerName + '.shp' + fidCommand);
+                           + layerDir.slice(0,-1) + ' ' + c.shapefile + fidCommand);
     }).then(function() {
-        // Get info from new shapefile
+        // Iterate over new shapefile and generate region_map json (FID -> property) files
         if (!steps.config) return;
 
+        // Use object to make columns unique
         var columns = {};
 
         Object.keys(c.regionMappingEntries).forEach(function (key) {
@@ -160,69 +164,53 @@ function processLayer(c) {
 
         var reader = shapefile.reader(layerDir + c.layerName + '.shp');
         return nodefn.call(reader.readHeader.bind(reader)).then(function(header) {
+            layerRectangle = merc.convert(header.bbox, "WGS84");
             // Iterate over records until shapefile.end
             return when.iterate(nodefn.lift(reader.readRecord.bind(reader)), function(record) { record === shapefile.end; }, function(record) {
-                // For each record in the shapefile:
-                // - Add the value of the specific property to the array
+                // With every record, get the value of each property required
                 region_mapJSONs.forEach(function(json) {
                     json.values.push(record.properties[json.property]);
                 });
             }).then(function() {
                 // Save region_map json files
-                return when.all(region_mapJSONs.map(function(json) {
+                return when.map(region_mapJSONs, function(json) {
                     return fs.writeFilePromise('region_map-' + json.layer + '_' + json.property + '.json');
-                }));
+                });
             });
-            return header.bbox;
         });
-    }).then(function(/*shapeinfo*/bbox) {
+    }).then(function() {
+        // Write out regionMapping-layerName.json
+        var regionWmsMap = {}
+        Object.keys(c.regionMappingEntries).forEach(function(key) {
+            var configEntry = c.regionMappingEntries[key];
+            var regionMappingEntry = {
+                layerName: c.layerName,
+                server: c.server,
+                serverType: "MVT",
+                serverSubdomains: c.serverSubdomains,
+                bbox: layerRectangle,
+                uniqueIdProp: c.uniqueIdProp !== "FID" ? c.uniqueIdProp : undefined, // Only set if not FID
+                regionProp: configEntry.regionProp,
+                aliases: configEntry.aliases,
+                nameProp: configEntry.nameProp,
+                description: configEntry.description,
+                regionIdsFile: 'data/regionids/region_map-' + c.layerName + configEntry.regionProp,
+            };
+
+            if (configEntry.disambigProp) {
+                regionMappingEntry.disambigProp = configEntry.disambigProp;
+                regionMappingEntry.disambigIdsFile = 'data/regionids/region_map-' + c.layerName + configEntry.disambigProp;
+            }
+
+            regionWmsMap[key] = regionMappingEntry;
+        });
+
+        return fs.writeFilePromise('regionMapping-' + c.layerName + '.json', JSON.stringify({regionWmsMap: regionWmsMap}, null, 2));
+
+    }).then(function() {
         // Create config.json and regionMapping.json entry
         if (!steps.config) return;
-        /*var header = shapeinfo[0];
-        var record = shapeinfo[1];*/
-
-        /* Not needed in nameProp is provided
-
-        // Adapted from Cesium ImageryLayerFeatureInfo.js (https://github.com/AnalyticalGraphicsInc/cesium/blob/1.19/Source/Scene/ImageryLayerFeatureInfo.js#L57)
-        // ================================================================================
-        var namePropertyPrecedence = 10;
-        var nameProperty;
-
-        for (var key in record.properties) {
-            if (record.properties.hasOwnProperty(key) && record.properties[key]) { // Is this logic bad? record.properties[key] may be null
-                var lowerKey = key.toLowerCase();
-
-                if (namePropertyPrecedence > 1 && lowerKey === 'name') {
-                    namePropertyPrecedence = 1;
-                    nameProperty = key;
-                } else if (namePropertyPrecedence > 2 && lowerKey === 'title') {
-                    namePropertyPrecedence = 2;
-                    nameProperty = key;
-                } else if (namePropertyPrecedence > 3 && /name/i.test(key)) {
-                    namePropertyPrecedence = 3;
-                    nameProperty = key;
-                } else if (namePropertyPrecedence > 4 && /title/i.test(key)) {
-                    namePropertyPrecedence = 4;
-                    nameProperty = key;
-                }
-            }
-        }
-        // ================================================================================
-        */
-
-        var bbox = merc.convert(/*header.*/bbox, "WGS84");
-        returnData = {
-            layerName: layerName,
-            regionMapping: {
-                layerName: layerName,
-                server: "http://127.0.0.1:8000/" + layerName + "/{z}/{x}/{y}.pbf",
-                serverType: "MVT",
-                serverSubdomains: undefined,
-                bbox: bbox,
-                nameProp: nameProperty
-            }
-        };
-        return fs.writeFilePromise(dataXmlFile, generateDataXml(layerName, bbox));
+        return fs.writeFilePromise(dataXmlFile, generateDataXml(c.layerName, layerRectangle));
     }).then(function() {
         if (c.generateTilesTo == null) return;
         // Generate mbtiles
@@ -242,31 +230,15 @@ function processLayer(c) {
         var configJson = JSON.parse(fs.readFileSync('config.json', 'utf8'));
         configJson[c.layerName] = {source: "hybrid://" + path.resolve(hybridJsonFile), minZ: const_minZ, maxZ: const_maxZ};
         return fs.writeFilePromise('config.json', JSON.stringify(configJson, null, 4));
-    }).catch(function(err) {
-        console.log('Layer ' + layerName + ' failed with error: ' + err);
+    /*}).catch(function(err) {
+        console.log('Layer ' + c.layerName + ' failed with error: ' + err);
         throw err;
+    */
     });
 }
 
 
-}).then(function() {
-    // Once all layers have finished processing
-    for (var i = 0; i < regionMaps.length; i++) {
-        var layerName = regionMappingJson.regionWmsMap[regionMaps[i]].layerName.replace('region_map:', '');
-        if (layers[layerName]) {
-            Object.assign(regionMappingJson.regionWmsMap[regionMaps[i]], layers[layerName]); // Update properties
-        }
-        else {
-            // Use WMS for this layer
-            Object.assign(regionMappingJson.regionWmsMap[regionMaps[i]], {
-                server: regionMappingJson.regionWmsMap[regionMaps[i]].server,
-                serverType: "WMS"
-            });
-        }
-    }
 
-    return when.join(
-        fs.writeFilePromise('config.json', JSON.stringify(configJson, null, 4)),
-        fs.writeFilePromise('regionMapping_out.json', JSON.stringify(regionMappingJson, null, 2))
-    );
-}).then(function() { process.exit(exitCode); });
+var config = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+
+processLayer(config).then(function() { process.exit(exitCode); });
