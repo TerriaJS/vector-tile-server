@@ -25,6 +25,7 @@ config = {
     "generateTilesTo": 10,
     "addFID": true,
 //    "uniqueIdProp": undefined,                     // Defaults to FID, but must be set when addFID is false
+    "nameProp": "name",
     "server": "http://127.0.0.1:8000/okcounties/{z}/{x}/{y}.pbf",      // May need to be corrected
     "serverSubdomains": [],
 
@@ -35,7 +36,6 @@ config = {
             "aliases": [
                 "okcounty"
             ],
-            "nameProp": "name",
             "description": "Oklahoma Counties"
         },
         "okcounty_name": {
@@ -44,7 +44,6 @@ config = {
             "aliases": [
                 "okcounty_name"
             ],
-            "nameProp": "name",
             "description": "Oklahoma Counties"
         },
     }
@@ -86,7 +85,7 @@ var steps = {
 
 var directory = 'data2/';
 var shapefile_dir = 'geoserver_shapefiles/';
-var gdal_env_setup = '';// '"C:\\Program Files\\GDAL\\GDALShell.bat" && ';
+var gdal_env_setup = /*'';//*/ '"C:\\Program Files\\GDAL\\GDALShell.bat" && ';
 
 // From mapnik/bin/mapnik-shapeindex.js
 var shapeindex = path.join(path.dirname( binary.find(require.resolve('mapnik/package.json')) ), 'shapeindex');
@@ -121,6 +120,34 @@ function generateDataXml(layerName, bbox, pgsql_db) {
     return data_xml_template.replace(/\{layerName\}/g, layerName).replace(/\{bbox\}/g, bbox.join(',')); // Have to use regex for global (g) option (like sed)
 }
 
+
+function determineNameProp(properties) {
+    // Adapted from Cesium ImageryLayerFeatureInfo.js (https://github.com/AnalyticalGraphicsInc/cesium/blob/1.19/Source/Scene/ImageryLayerFeatureInfo.js#L57)
+    var namePropertyPrecedence = 10;
+    var nameProperty;
+
+    for (var key in properties) {
+        if (properties.hasOwnProperty(key) && properties[key]) { // Is this logic bad? properties[key] may be 0 or null
+            var lowerKey = key.toLowerCase();
+
+            if (namePropertyPrecedence > 1 && lowerKey === 'name') {
+                namePropertyPrecedence = 1;
+                nameProperty = key;
+            } else if (namePropertyPrecedence > 2 && lowerKey === 'title') {
+                namePropertyPrecedence = 2;
+                nameProperty = key;
+            } else if (namePropertyPrecedence > 3 && /name/i.test(key)) {
+                namePropertyPrecedence = 3;
+                nameProperty = key;
+            } else if (namePropertyPrecedence > 4 && /title/i.test(key)) {
+                namePropertyPrecedence = 4;
+                nameProperty = key;
+            }
+        }
+    }
+    return nameProperty;
+}
+
 function processLayer(c) {
     var layerDir = directory + c.layerName + '/';
     var hybridJsonFile = layerDir + 'hybrid.json';
@@ -135,7 +162,7 @@ function processLayer(c) {
         console.log('Converting ' + c.layerName + ' to Web Mercator projection');
 
         // Add an FID if the input config
-        var fidCommand = c.addFID ? " -sql 'select FID,* from " + c.layerName + "'" : '';
+        var fidCommand = c.addFID ? ' -sql "select FID,* from ' + c.layerName + '"' : '';
         return execPromise(gdal_env_setup + 'ogr2ogr -t_srs EPSG:3857 -clipsrc -180 -85.0511 180 85.0511 -overwrite -f "ESRI Shapefile" '
                            + layerDir.slice(0,-1) + ' ' + c.shapefile + fidCommand);
     }).then(function() {
@@ -154,7 +181,7 @@ function processLayer(c) {
             }
         })
 
-        region_mapJSONs = Object.keys(columns).map(function(column) {
+        var region_mapJSONs = Object.keys(columns).map(function(column) {
             return {
                 "layer": c.layerName,
                 "property": column,
@@ -163,19 +190,28 @@ function processLayer(c) {
         });
 
         var reader = shapefile.reader(layerDir + c.layerName + '.shp');
+        var nextRecord = function() { return nodefn.call(reader.readRecord.bind(reader)); };
         return nodefn.call(reader.readHeader.bind(reader)).then(function(header) {
             layerRectangle = merc.convert(header.bbox, "WGS84");
+            return nextRecord();
+        }).tap(function(record) {
+            // Tap the first record and use it to set nameProp
+            if (c.nameProp === undefined) {
+                c.nameProp = determineNameProp(record.properties);
+                // c.nameProp may still be undefined if no suitable property was found
+            }
+        }).then(function(firstRecord) {
             // Iterate over records until shapefile.end
-            return when.iterate(nodefn.lift(reader.readRecord.bind(reader)), function(record) { record === shapefile.end; }, function(record) {
+            return when.iterate(nextRecord, function(record) { return record === shapefile.end; }, function(record) {
                 // With every record, get the value of each property required
                 region_mapJSONs.forEach(function(json) {
                     json.values.push(record.properties[json.property]);
                 });
-            }).then(function() {
-                // Save region_map json files
-                return when.map(region_mapJSONs, function(json) {
-                    return fs.writeFilePromise('region_map-' + json.layer + '_' + json.property + '.json');
-                });
+            }, firstRecord);
+        }).then(function() {
+            // Save region_map json files
+            return when.map(region_mapJSONs, function(json) {
+                return fs.writeFilePromise('region_map-' + json.layer + '_' + json.property + '.json', JSON.stringify(json));
             });
         });
     }).then(function() {
@@ -192,14 +228,14 @@ function processLayer(c) {
                 uniqueIdProp: c.uniqueIdProp !== "FID" ? c.uniqueIdProp : undefined, // Only set if not FID
                 regionProp: configEntry.regionProp,
                 aliases: configEntry.aliases,
-                nameProp: configEntry.nameProp,
+                nameProp: c.nameProp,
                 description: configEntry.description,
-                regionIdsFile: 'data/regionids/region_map-' + c.layerName + configEntry.regionProp,
+                regionIdsFile: 'data/regionids/region_map-' + c.layerName + '_' + configEntry.regionProp + '.json',
             };
 
             if (configEntry.disambigProp) {
                 regionMappingEntry.disambigProp = configEntry.disambigProp;
-                regionMappingEntry.disambigIdsFile = 'data/regionids/region_map-' + c.layerName + configEntry.disambigProp;
+                regionMappingEntry.disambigIdsFile = 'data/regionids/region_map-' + c.layerName + '_' + configEntry.disambigProp + '.json';
             }
 
             regionWmsMap[key] = regionMappingEntry;
@@ -214,13 +250,13 @@ function processLayer(c) {
     }).then(function() {
         if (c.generateTilesTo == null) return;
         // Generate mbtiles
-        console.log('Running tile generation for ' + layerName);
-        //return execPromise('echo node save_tiles.js ' + [dataXmlFile, mbtilesFile, const_minZ, const_maxGenZ].concat(returnData.regionMapping.bbox).join(' ') + ' > ' + mbtilesFile + '.txt');
-        return execPromise('node save_tiles.js ' + [dataXmlFile, mbtilesFile, const_minZ, c.generateTilesTo].concat(returnData.regionMapping.bbox).join(' '));
+        console.log('Running tile generation for ' + c.layerName);
+        //return execPromise('echo node save_tiles.js ' + [dataXmlFile, mbtilesFile, const_minZ, const_maxGenZ].concat(layerRectangle).join(' ') + ' > ' + mbtilesFile + '.txt');
+        return execPromise('node save_tiles.js ' + [dataXmlFile, mbtilesFile, const_minZ, c.generateTilesTo].concat(layerRectangle).join(' '));
     }).then(function() {
         if (!steps.config) return;
         // Write out hybrid.json
-        console.log('Tile generation finished for ' + layerName);
+        console.log('Tile generation finished for ' + c.layerName);
         return fs.writeFilePromise(hybridJsonFile, JSON.stringify({sources: [
             {source: "mbtiles://" + path.resolve(mbtilesFile), minZ: const_minZ, maxZ: c.generateTilesTo},
             {source: "bridge://" + path.resolve(dataXmlFile), minZ: const_minZ, maxZ: const_maxZ}
@@ -241,4 +277,4 @@ function processLayer(c) {
 
 var config = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 
-processLayer(config).then(function() { process.exit(exitCode); });
+processLayer(config).then(function() { process.exit(0); });
