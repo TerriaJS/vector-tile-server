@@ -4,12 +4,12 @@
 //
 
 // This script must:
-// 1. Convert the given shapefile to the correct projection
-// 2. Create an FID field
-// 3. Generate mbtiles & hybrid config file
-// 4. Generate a regionMapping.json entry
-// 5. Generate a/multiple region_maps-... .json
-// 6. Append region map to config.json
+// 1. Convert the given shapefile to the correct projection [x]
+// 2. Create an FID field                                   [x]
+// 3. Generate mbtiles & hybrid config file                 [x]
+// 4. Generate a regionMapping.json entry                   [x]
+// 5. Generate a/multiple region_maps-... .json             [x]
+// 6. Append region map to config.json                      [x]
 
 // Input needs to tell us:
 // - Where the shapefile is
@@ -67,25 +67,28 @@ var merc = new (require('sphericalmercator'))();
 
 // Promise versions of node-style functions
 fs.writeFilePromise = nodefn.lift(fs.writeFile);
+fs.readFilePromise = nodefn.lift(fs.readFile);
 var execPromise = nodefn.lift(exec);
 
 
 var const_maxZ = 20;
 var const_minZ = 0;
-var const_maxGenZ = 10;
+var const_maxGenZ = 12;
 
 var const_parallel_limit = 3;
 
 var steps = {
-    reprojection: true,
+    reprojection: false,
     tileGeneration: true,
     config: true
 }
 
 
 var directory = 'data2/';
+var tempDir = 'temp/';
 var shapefile_dir = 'geoserver_shapefiles/';
-var gdal_env_setup = /*'';//*/ '"C:\\Program Files\\GDAL\\GDALShell.bat" && ';
+var gdal_env_setup = '';// '"C:\\Program Files\\GDAL\\GDALShell.bat" && ';
+var regionMapConfigFile = process.argv[2];
 
 // From mapnik/bin/mapnik-shapeindex.js
 var shapeindex = path.join(path.dirname( binary.find(require.resolve('mapnik/package.json')) ), 'shapeindex');
@@ -159,12 +162,14 @@ function processLayer(c) {
     return when().then(function() {
         // Reproject to EPSG:3857 and add an FID
         if (!steps.reprojection) return;
+        var shapefile_loc = path.resolve(path.dirname(regionMapConfigFile), c.shapefile).replace(/ /g, '\\ ');
+        console.log(shapefile_loc);
         console.log('Converting ' + c.layerName + ' to Web Mercator projection');
 
         // Add an FID if the input config
         var fidCommand = c.addFID ? ' -sql "select FID,* from ' + c.layerName + '"' : '';
         return execPromise(gdal_env_setup + 'ogr2ogr -t_srs EPSG:3857 -clipsrc -180 -85.0511 180 85.0511 -overwrite -f "ESRI Shapefile" '
-                           + layerDir.slice(0,-1) + ' ' + c.shapefile + fidCommand);
+                           + layerDir.slice(0,-1) + ' ' + shapefile_loc + fidCommand);
     }).then(function() {
         // Iterate over new shapefile and generate region_map json (FID -> property) files
         if (!steps.config) return;
@@ -248,11 +253,18 @@ function processLayer(c) {
         if (!steps.config) return;
         return fs.writeFilePromise(dataXmlFile, generateDataXml(c.layerName, layerRectangle));
     }).then(function() {
-        if (c.generateTilesTo == null) return;
+        if (c.generateTilesTo == null || !steps.tileGeneration) return;
         // Generate mbtiles
         console.log('Running tile generation for ' + c.layerName);
-        //return execPromise('echo node save_tiles.js ' + [dataXmlFile, mbtilesFile, const_minZ, const_maxGenZ].concat(layerRectangle).join(' ') + ' > ' + mbtilesFile + '.txt');
-        return execPromise('node save_tiles.js ' + [dataXmlFile, mbtilesFile, const_minZ, c.generateTilesTo].concat(layerRectangle).join(' '));
+
+
+        // Using tilelive-bridge + node-mbtiles
+        //return execPromise('node save_tiles.js ' + [dataXmlFile, mbtilesFile, const_minZ, c.generateTilesTo].concat(layerRectangle).join(' '));
+
+        // Using Tippecanoe:
+        return execPromise(gdal_env_setup + 'ogr2ogr -s_srs EPSG:3857 -t_srs EPSG:4326 -overwrite -f GeoJSON ' + tempDir + c.layerName + '.geojson' + ' ' + layerDir + c.layerName + '.shp').then(function() {
+            return execPromise('tippecanoe -q -f -rg -pp -l ' + c.layerName + ' -z ' + const_maxGenZ + ' -o ' + layerDir + 'store.mbtiles ' + tempDir + c.layerName + '.geojson > /dev/null');
+        });
     }).then(function() {
         if (!steps.config) return;
         // Write out hybrid.json
@@ -262,10 +274,13 @@ function processLayer(c) {
             {source: "bridge://" + path.resolve(dataXmlFile), minZ: const_minZ, maxZ: const_maxZ}
         ]})).yield(returnData);
     }).then(function() {
-        // Append layer to config.json
-        var configJson = JSON.parse(fs.readFileSync('config.json', 'utf8'));
-        configJson[c.layerName] = {source: "hybrid://" + path.resolve(hybridJsonFile), minZ: const_minZ, maxZ: const_maxZ};
-        return fs.writeFilePromise('config.json', JSON.stringify(configJson, null, 4));
+        // Append layer to config.json, or make a new config if it doesn't
+        return fs.readFilePromise('config.json', 'utf8').else('{}').then(JSON.parse).then(function(configJson) {
+            configJson['/' + c.layerName] = {source: "hybrid://" + path.resolve(hybridJsonFile), minZ: const_minZ, maxZ: const_maxZ};
+            return fs.writeFilePromise('config.json', JSON.stringify(configJson, null, 4));
+        });
+        //var configJson = JSON.parse(fs.readFileSync());
+        //return fs.writeFilePromise('config.json', JSON.stringify(configJson, null, 4));
     /*}).catch(function(err) {
         console.log('Layer ' + c.layerName + ' failed with error: ' + err);
         throw err;
@@ -275,6 +290,6 @@ function processLayer(c) {
 
 
 
-var config = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+var config = JSON.parse(fs.readFileSync(regionMapConfigFile, 'utf8'));
 
 processLayer(config).then(function() { process.exit(0); });
