@@ -86,6 +86,7 @@ var steps = {
 
 var directory = 'data2/';
 var tempDir = 'temp/';
+var outputDir = 'output_files/';
 var shapefile_dir = 'geoserver_shapefiles/';
 var gdal_env_setup = '';// '"C:\\Program Files\\GDAL\\GDALShell.bat" && ';
 var regionMapConfigFile = process.argv[2];
@@ -174,7 +175,7 @@ function processLayer(c) {
         // Iterate over new shapefile and generate region_map json (FID -> property) files
         if (!steps.config) return;
 
-        // Use object to make columns unique
+        // Get all the columns
         var columns = {};
 
         Object.keys(c.regionMappingEntries).forEach(function (key) {
@@ -186,7 +187,7 @@ function processLayer(c) {
             }
         })
 
-        var region_mapJSONs = Object.keys(columns).map(function(column) {
+        var regionidJSONs = Object.keys(columns).map(function(column) {
             return {
                 "layer": c.layerName,
                 "property": column,
@@ -209,14 +210,14 @@ function processLayer(c) {
             // Iterate over records until shapefile.end
             return when.iterate(nextRecord, function(record) { return record === shapefile.end; }, function(record) {
                 // With every record, get the value of each property required
-                region_mapJSONs.forEach(function(json) {
+                regionidJSONs.forEach(function(json) {
                     json.values.push(record.properties[json.property]);
                 });
             }, firstRecord);
         }).then(function() {
-            // Save region_map json files
-            return when.map(region_mapJSONs, function(json) {
-                return fs.writeFilePromise('region_map-' + json.layer + '_' + json.property + '.json', JSON.stringify(json));
+            // Save regionid json files
+            return when.map(regionidJSONs, function(json) {
+                return fs.writeFilePromise(outputDir + 'region_map-' + json.layer + '_' + json.property + '.json', JSON.stringify(json));
             });
         });
     }).then(function() {
@@ -246,7 +247,7 @@ function processLayer(c) {
             regionWmsMap[key] = regionMappingEntry;
         });
 
-        return fs.writeFilePromise('regionMapping-' + c.layerName + '.json', JSON.stringify({regionWmsMap: regionWmsMap}, null, 2));
+        return fs.writeFilePromise(outputDir + 'regionMapping-' + c.layerName + '.json', JSON.stringify({regionWmsMap: regionWmsMap}, null, 2));
 
     }).then(function() {
         // Create config.json and regionMapping.json entry
