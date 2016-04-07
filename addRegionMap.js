@@ -6,7 +6,7 @@
 // This script must:
 // 1. Convert the given shapefile to the correct projection [x]
 // 2. Create an FID field                                   [x]
-// 3. Generate mbtiles & hybrid config file                 [x]
+// 3. Generate mbtiles & hybrid config files and data.xml   [x]
 // 4. Generate a regionMapping.json entry                   [x]
 // 5. Generate a/multiple region_maps-... .json             [x]
 // 6. Append region map to config.json                      [x]
@@ -78,7 +78,7 @@ var const_maxGenZ = 12;
 var const_parallel_limit = 3;
 
 var steps = {
-    reprojection: false,
+    reprojection: true,
     tileGeneration: true,
     config: true
 }
@@ -250,7 +250,7 @@ function processLayer(c) {
         return fs.writeFilePromise(outputDir + 'regionMapping-' + c.layerName + '.json', JSON.stringify({regionWmsMap: regionWmsMap}, null, 2));
 
     }).then(function() {
-        // Create config.json and regionMapping.json entry
+        // Create data.xml
         if (!steps.config) return;
         return fs.writeFilePromise(dataXmlFile, generateDataXml(c.layerName, layerRectangle));
     }).then(function() {
@@ -264,7 +264,7 @@ function processLayer(c) {
 
         // Using Tippecanoe:
         return execPromise(gdal_env_setup + 'ogr2ogr -s_srs EPSG:3857 -t_srs EPSG:4326 -overwrite -f GeoJSON ' + tempDir + c.layerName + '.geojson' + ' ' + layerDir + c.layerName + '.shp').then(function() {
-            return execPromise('tippecanoe -q -f -rg -pp -l ' + c.layerName + ' -z ' + const_maxGenZ + ' -o ' + layerDir + 'store.mbtiles ' + tempDir + c.layerName + '.geojson > /dev/null');
+            return execPromise('tippecanoe -q -f -rg -pp -P -l ' + c.layerName + ' -z ' + c.generateTilesTo + ' -o ' + layerDir + 'store.mbtiles ' + tempDir + c.layerName + '.geojson > /dev/null');
         });
     }).then(function() {
         if (!steps.config) return;
@@ -275,6 +275,7 @@ function processLayer(c) {
             {source: "bridge://" + path.resolve(dataXmlFile), minZ: const_minZ, maxZ: const_maxZ}
         ]})).yield(returnData);
     }).then(function() {
+        // Potential race condition if addRegionMaps.js is called on multiple region maps in parrelel
         // Append layer to config.json, or make a new config if it doesn't
         return fs.readFilePromise('config.json', 'utf8').else('{}').then(JSON.parse).then(function(configJson) {
             configJson['/' + c.layerName] = {source: "hybrid://" + path.resolve(hybridJsonFile), minZ: const_minZ, maxZ: const_maxZ};
