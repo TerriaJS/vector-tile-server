@@ -263,7 +263,11 @@ function processLayer(c) {
         //return execPromise('node save_tiles.js ' + [dataXmlFile, mbtilesFile, const_minZ, c.generateTilesTo].concat(layerRectangle).join(' '));
 
         // Using Tippecanoe:
-        return execPromise(gdal_env_setup + 'ogr2ogr -s_srs EPSG:3857 -t_srs EPSG:4326 -overwrite -f GeoJSON ' + tempDir + c.layerName + '.geojson' + ' ' + layerDir + c.layerName + '.shp').then(function() {
+        return execPromise(gdal_env_setup + 'ogr2ogr -s_srs EPSG:3857 -t_srs EPSG:4326 -overwrite -f GeoJSON ' + tempDir + c.layerName + '.geojson' + ' ' + layerDir + c.layerName + '.shp').catch(function(err) {
+            // Don't error out if the GeoJSON file has already been created
+            if (!err.message.match("GeoJSON Driver doesn't support update."))
+                throw err;
+        }).then(function() {
             return execPromise('tippecanoe -q -f -rg -pp -P -l ' + c.layerName + ' -z ' + c.generateTilesTo + ' -o ' + layerDir + 'store.mbtiles ' + tempDir + c.layerName + '.geojson > /dev/null');
         });
     }).then(function() {
@@ -294,4 +298,9 @@ function processLayer(c) {
 
 var config = JSON.parse(fs.readFileSync(regionMapConfigFile, 'utf8'));
 
-processLayer(config).then(function() { process.exit(0); });
+processLayer(config).then(function() {
+    process.exit(0);
+}).catch(function(err) {
+    console.log(err);
+    process.exit(1);
+});
