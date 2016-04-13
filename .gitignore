@@ -2,3 +2,13 @@ node_modules/
 .tags*
 data/
 data2/
+addRegionMapConfig/
+temp/
+geoserver_shapefiles/
+output_files/
+test_region_maps/
+config.json
+regionMapping_out.json
+unfinished_layers.json
+
+.DS_Store
