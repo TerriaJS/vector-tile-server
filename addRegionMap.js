@@ -70,10 +70,9 @@ fs.writeFilePromise = nodefn.lift(fs.writeFile);
 fs.readFilePromise = nodefn.lift(fs.readFile);
 var execPromise = nodefn.lift(exec);
 
-
-var const_maxZ = 20;
 var const_minZ = 0;
 var const_maxGenZ = 12;
+var const_maxZ = Infinity;
 
 var const_parallel_limit = 3;
 
@@ -230,6 +229,8 @@ function processLayer(c) {
                 server: c.server,
                 serverType: "MVT",
                 serverSubdomains: c.serverSubdomains,
+                serverMinZoom: const_minZ,
+                serverMaxZoom: (const_maxZ === Infinity ? undefined : const_maxZ), // JSON can't represent Infinity but both server and client default to Infinity
                 bbox: layerRectangle,
                 uniqueIdProp: c.uniqueIdProp !== "FID" ? c.uniqueIdProp : undefined, // Only set if not FID
                 regionProp: configEntry.regionProp,
@@ -276,13 +277,13 @@ function processLayer(c) {
         console.log('Tile generation finished for ' + c.layerName);
         return fs.writeFilePromise(hybridJsonFile, JSON.stringify({sources: [
             {source: "mbtiles://" + path.resolve(mbtilesFile), minZ: const_minZ, maxZ: c.generateTilesTo},
-            {source: "bridge://" + path.resolve(dataXmlFile), minZ: const_minZ, maxZ: const_maxZ}
+            {source: "bridge://" + path.resolve(dataXmlFile), minZ: const_minZ, maxZ: (const_maxZ === Infinity ? undefined : const_maxZ)}
         ]})).yield(returnData);
     }).then(function() {
         // Potential race condition if addRegionMaps.js is called on multiple region maps in parrelel
         // Append layer to config.json, or make a new config if it doesn't
         return fs.readFilePromise('config.json', 'utf8').else('{}').then(JSON.parse).then(function(configJson) {
-            configJson['/' + c.layerName] = {source: "hybrid://" + path.resolve(hybridJsonFile), minZ: const_minZ, maxZ: const_maxZ};
+            configJson['/' + c.layerName] = {source: "hybrid://" + path.resolve(hybridJsonFile), minZ: const_minZ, maxZ: (const_maxZ === Infinity ? undefined : const_maxZ)};
             return fs.writeFilePromise('config.json', JSON.stringify(configJson, null, 4));
         });
         //var configJson = JSON.parse(fs.readFileSync());
