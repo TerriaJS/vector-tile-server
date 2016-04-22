@@ -23,6 +23,7 @@ var const_maxGenZ = 12;
 
 var configDir = 'addRegionMapConfig/';
 var scriptOutputDir = 'output_files/';
+var serverLocation = "http://crisp.terria.io:8000/";
 
 
 function processLayer(c) {
@@ -96,7 +97,7 @@ when.map(Object.keys(layers), function(layerName) {
         generateTilesTo: layerName === "FID_TM_WORLD_BORDERS" ? 10 : const_maxGenZ,
         addFID: false,
         uniqueIDProp: "FID",
-        server: "http://127.0.0.1:8000/" + layerName + "/{z}/{x}/{y}.pbf",
+        server: serverLocation + layerName + "/{z}/{x}/{y}.pbf",
         "serverSubdomains": [],
         "regionMappingEntries": layers[layerName]
     };
@@ -132,7 +133,6 @@ when.map(Object.keys(layers), function(layerName) {
         var layerName = regionMappingJson.regionWmsMap[regionMaps[i]].layerName.replace('region_map:', '');
         if (layers[layerName].completed) {
             Object.assign(regionMappingJson.regionWmsMap[regionMaps[i]], layerOutputJSONs[layerName].regionWmsMap[regionMaps[i]]); // Update properties
-            console.log(JSON.stringify(layerOutputJSONs[layerName].regionWmsMap[regionMaps[i]], null, 4));
         }
         else {
             // Use WMS for this layer

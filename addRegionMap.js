@@ -84,7 +84,7 @@ var steps = {
 }
 
 
-var directory = 'data2/';
+var directory = 'data/';
 var tempDir = 'temp/';
 var outputDir = 'output_files/';
 var shapefile_dir = 'geoserver_shapefiles/';
