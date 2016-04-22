@@ -73,6 +73,7 @@ var execPromise = nodefn.lift(exec);
 var const_minZ = 0;
 var const_maxGenZ = 12;
 var const_maxZ = Infinity;
+var const_headers = { "Cache-Control": "public,max-age=86400" };
 
 var const_parallel_limit = 3;
 
@@ -283,7 +284,7 @@ function processLayer(c) {
         // Potential race condition if addRegionMaps.js is called on multiple region maps in parrelel
         // Append layer to config.json, or make a new config if it doesn't
         return fs.readFilePromise('config.json', 'utf8').else('{}').then(JSON.parse).then(function(configJson) {
-            configJson['/' + c.layerName] = {source: "hybrid://" + path.resolve(hybridJsonFile), minZ: const_minZ, maxZ: (const_maxZ === Infinity ? undefined : const_maxZ)};
+            configJson['/' + c.layerName] = {source: "hybrid://" + path.resolve(hybridJsonFile), headers: const_headers, minZ: const_minZ, maxZ: (const_maxZ === Infinity ? undefined : const_maxZ)};
             return fs.writeFilePromise('config.json', JSON.stringify(configJson, null, 4));
         });
         //var configJson = JSON.parse(fs.readFileSync());
