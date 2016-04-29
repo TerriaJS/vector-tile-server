@@ -33,6 +33,7 @@ config = {
         "okcounty": {
             "regionProp": "county",
 //            "disambigProp": "state",               // disambigProp not needed
+//            "disambigRegionId": "STE_NAME",
             "aliases": [
                 "okcounty"
             ],
@@ -243,13 +244,14 @@ function processLayer(c) {
 
             if (configEntry.disambigProp) {
                 regionMappingEntry.disambigProp = configEntry.disambigProp;
-                regionMappingEntry.disambigIdsFile = 'data/regionids/region_map-' + c.layerName + '_' + configEntry.disambigProp + '.json';
+                regionMappingEntry.disambigRegionId = configEntry.disambigRegionId;
+                regionMappingEntry.regionDisambigIdsFile = 'data/regionids/region_map-' + c.layerName + '_' + configEntry.disambigProp + '.json';
             }
 
             regionWmsMap[key] = regionMappingEntry;
         });
 
-        return fs.writeFilePromise(outputDir + 'regionMapping-' + c.layerName + '.json', JSON.stringify({regionWmsMap: regionWmsMap}, null, 2));
+        return fs.writeFilePromise(outputDir + 'regionMapping-' + c.layerName + '.json', JSON.stringify({regionWmsMap: regionWmsMap}, null, 4));
 
     }).then(function() {
         // Create data.xml

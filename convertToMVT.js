@@ -143,5 +143,5 @@ when.map(Object.keys(layers), function(layerName) {
         }
     }
 
-    return fs.writeFilePromise('regionMapping_out.json', JSON.stringify(regionMappingJson, null, 2));
+    return fs.writeFilePromise('regionMapping_out.json', JSON.stringify(regionMappingJson, null, 4));
 }).then(function() { process.exit(exitCode); });
