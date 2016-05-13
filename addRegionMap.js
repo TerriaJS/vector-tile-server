@@ -89,6 +89,7 @@ var directory = 'data/';
 var tempDir = 'temp/';
 var outputDir = 'output_files/';
 var shapefile_dir = 'geoserver_shapefiles/';
+var configJsonDir = 'config/'
 var gdal_env_setup = '';// '"C:\\Program Files\\GDAL\\GDALShell.bat" && ';
 var regionMapConfigFile = process.argv[2];
 
@@ -283,14 +284,10 @@ function processLayer(c) {
             {source: "bridge://" + path.resolve(dataXmlFile), minZ: const_minZ, maxZ: (const_maxZ === Infinity ? undefined : const_maxZ)}
         ]})).yield(returnData);
     }).then(function() {
-        // Potential race condition if addRegionMaps.js is called on multiple region maps in parrelel
-        // Append layer to config.json, or make a new config if it doesn't
-        return fs.readFilePromise('config.json', 'utf8').else('{}').then(JSON.parse).then(function(configJson) {
-            configJson['/' + c.layerName] = {source: "hybrid://" + path.resolve(hybridJsonFile), headers: const_headers, minZ: const_minZ, maxZ: (const_maxZ === Infinity ? undefined : const_maxZ)};
-            return fs.writeFilePromise('config.json', JSON.stringify(configJson, null, 4));
-        });
-        //var configJson = JSON.parse(fs.readFileSync());
-        //return fs.writeFilePromise('config.json', JSON.stringify(configJson, null, 4));
+        // Add/overwrite layerName.json to configJsonDir
+        var configJson = {};
+        configJson['/' + c.layerName] = {source: "hybrid://" + path.resolve(hybridJsonFile), headers: const_headers, minZ: const_minZ, maxZ: (const_maxZ === Infinity ? undefined : const_maxZ)};
+        return fs.writeFilePromise(configJsonDir + c.layerName + '.json', JSON.stringify(configJson, null, 4));
     /*}).catch(function(err) {
         console.log('Layer ' + c.layerName + ' failed with error: ' + err);
         throw err;
