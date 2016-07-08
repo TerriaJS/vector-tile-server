@@ -59,7 +59,6 @@ var exec = require('child_process').exec;
 
 var when = require('when');
 var nodefn = require('when/node');
-var guard = require('when/guard');
 var fs = require('fs');
 var path = require('path');
 var binary = require('node-pre-gyp');
@@ -85,16 +84,17 @@ var steps = {
 }
 
 
-var directory = 'data/';
+var dataDir = 'data/';
 var tempDir = 'temp/';
 var outputDir = 'output_files/';
 var shapefile_dir = 'geoserver_shapefiles/';
+var reprojected_shapefile_dir = 'epsg4326_shapefiles/'
 var configJsonDir = 'config/'
 var gdal_env_setup = '';// '"C:\\Program Files\\GDAL\\GDALShell.bat" && ';
 var regionMapConfigFile = process.argv[2];
 
 // From mapnik/bin/mapnik-shapeindex.js
-var shapeindex = path.join(path.dirname( binary.find(require.resolve('mapnik/package.json')) ), 'shapeindex');
+//var shapeindex = path.join(path.dirname( binary.find(require.resolve('mapnik/package.json')) ), 'shapeindex');
 
 // From Mozilla MDN. Polyfill for old Node versions
 if (typeof Object.assign != 'function') {
@@ -121,10 +121,10 @@ if (typeof Object.assign != 'function') {
 }
 
 
-var data_xml_template = fs.readFileSync('data.xml.template', 'utf8'); // Use shapefile template
-function generateDataXml(layerName, bbox, pgsql_db) {
-    return data_xml_template.replace(/\{layerName\}/g, layerName).replace(/\{bbox\}/g, bbox.join(',')); // Have to use regex for global (g) option (like sed)
-}
+// var data_xml_template = fs.readFileSync('data.xml.template', 'utf8'); // Use shapefile template
+// function generateDataXml(layerName, bbox, pgsql_db) {
+//     return data_xml_template.replace(/\{layerName\}/g, layerName).replace(/\{bbox\}/g, bbox.join(',')); // Have to use regex for global (g) option (like sed)
+// }
 
 
 function determineNameProp(properties) {
@@ -155,15 +155,13 @@ function determineNameProp(properties) {
 }
 
 function processLayer(c) {
-    var layerDir = directory + c.layerName + '/';
-    var hybridJsonFile = layerDir + 'hybrid.json';
-    var dataXmlFile = layerDir + 'data.xml';
-    var mbtilesFile = layerDir + 'store.mbtiles';
+    var geoJsonFile = tempDir + c.layerName + '.geojson';
+    var mbtilesFile = dataDir + c.layerName + '.mbtiles';
     var layerRectangle;
     var returnData = {};
 
     return when().then(function() {
-        // Reproject to EPSG:3857 and add an FID
+        // Reproject to EPSG:4326 and add an FID
         if (!steps.reprojection) return;
         var shapefile_loc = path.resolve(path.dirname(regionMapConfigFile), c.shapefile).replace(/ /g, '\\ ');
         console.log(shapefile_loc);
@@ -171,8 +169,8 @@ function processLayer(c) {
 
         // Add an FID if the input config
         var fidCommand = c.addFID ? ' -sql "select FID,* from ' + c.layerName + '"' : '';
-        return execPromise(gdal_env_setup + 'ogr2ogr -t_srs EPSG:3857 -clipsrc -180 -85.0511 180 85.0511 -overwrite -f "ESRI Shapefile" '
-                           + layerDir.slice(0,-1) + ' ' + shapefile_loc + fidCommand);
+        return execPromise(gdal_env_setup + 'ogr2ogr -t_srs EPSG:4326 -clipsrc -180 -85.0511 180 85.0511 -overwrite -f "ESRI Shapefile" '
+                           + reprojected_shapefile_dir.slice(0,-1) + ' ' + shapefile_loc + fidCommand);
     }).then(function() {
         // Iterate over new shapefile and generate region_map json (FID -> property) files
         if (!steps.config) return;
@@ -197,7 +195,7 @@ function processLayer(c) {
             };
         });
 
-        var reader = shapefile.reader(layerDir + c.layerName + '.shp');
+        var reader = shapefile.reader(reprojected_shapefile_dir + c.layerName + '.shp');
         var nextRecord = function() { return nodefn.call(reader.readRecord.bind(reader)); };
         return nodefn.call(reader.readHeader.bind(reader)).then(function(header) {
             layerRectangle = merc.convert(header.bbox, "WGS84");
@@ -255,38 +253,32 @@ function processLayer(c) {
         return fs.writeFilePromise(outputDir + 'regionMapping-' + c.layerName + '.json', JSON.stringify({regionWmsMap: regionWmsMap}, null, 4));
 
     }).then(function() {
-        // Create data.xml
-        if (!steps.config) return;
-        return fs.writeFilePromise(dataXmlFile, generateDataXml(c.layerName, layerRectangle));
-    }).then(function() {
         if (c.generateTilesTo == null || !steps.tileGeneration) return;
         // Generate mbtiles
         console.log('Running tile generation for ' + c.layerName);
 
-
-        // Using tilelive-bridge + node-mbtiles
-        //return execPromise('node save_tiles.js ' + [dataXmlFile, mbtilesFile, const_minZ, c.generateTilesTo].concat(layerRectangle).join(' '));
-
-        // Using Tippecanoe:
-        return execPromise(gdal_env_setup + 'ogr2ogr -s_srs EPSG:3857 -t_srs EPSG:4326 -overwrite -f GeoJSON ' + tempDir + c.layerName + '.geojson' + ' ' + layerDir + c.layerName + '.shp').catch(function(err) {
+        // Using Tippecanoe: // -s_srs EPSG:4326 -t_srs EPSG:4326
+        // Convet to GeoJSON, then use Tippecanoe to generate tiles
+        return execPromise(gdal_env_setup + 'ogr2ogr -overwrite -f GeoJSON ' + geoJsonFile + ' ' + reprojected_shapefile_dir + c.layerName + '.shp').catch(function(err) {
             // Don't error out if the GeoJSON file has already been created
             if (!err.message.match("GeoJSON Driver doesn't support update."))
                 throw err;
         }).then(function() {
-            return execPromise('tippecanoe -q -f -rg -pp -P -l ' + c.layerName + ' -z ' + c.generateTilesTo + ' -o ' + layerDir + 'store.mbtiles ' + tempDir + c.layerName + '.geojson > /dev/null');
+            // Use Tippecanoe with the following options:
+            // -q = quiet
+            // -f = force overwrite
+            // -P = parallel mode
+            // -pp = don't split complex polygons
+            // -pS = don't simplify the max zoom level (max zoom level tiles are exact geometry, for overzooming)
+            // -l str = mbtiels layer name
+            // -z # = maximum zoom
+            // -d # = detail at max zoom level (maximum allowed is 32 - max zoom, probably because Tippecanoe uses unsigned 32 bit integers)
+            return execPromise('tippecanoe -q -f -P -pp -pS -l ' + c.layerName + ' -z ' + c.generateTilesTo + ' -d ' + (32-c.generateTilesTo) + ' -o ' + mbtilesFile + ' ' + geoJsonFile + ' > /dev/null');
         });
-    }).then(function() {
-        if (!steps.config) return;
-        // Write out hybrid.json
-        console.log('Tile generation finished for ' + c.layerName);
-        return fs.writeFilePromise(hybridJsonFile, JSON.stringify({sources: [
-            {source: "mbtiles://" + path.resolve(mbtilesFile), minZ: const_minZ, maxZ: c.generateTilesTo},
-            {source: "bridge://" + path.resolve(dataXmlFile), minZ: const_minZ, maxZ: (const_maxZ === Infinity ? undefined : const_maxZ)}
-        ]})).yield(returnData);
     }).then(function() {
         // Add/overwrite layerName.json to configJsonDir
         var configJson = {};
-        configJson['/' + c.layerName] = {source: "hybrid://" + path.resolve(hybridJsonFile), headers: const_headers, minZ: const_minZ, maxZ: (const_maxZ === Infinity ? undefined : const_maxZ)};
+        configJson['/' + c.layerName] = {source: "mbtiles://" + path.resolve(mbtilesFile), headers: const_headers};
         return fs.writeFilePromise(configJsonDir + c.layerName + '.json', JSON.stringify(configJson, null, 4));
     /*}).catch(function(err) {
         console.log('Layer ' + c.layerName + ' failed with error: ' + err);
@@ -302,6 +294,6 @@ var config = JSON.parse(fs.readFileSync(regionMapConfigFile, 'utf8'));
 processLayer(config).then(function() {
     process.exit(0);
 }).catch(function(err) {
-    console.log(err);
+    console.error(err);
     process.exit(1);
 });
