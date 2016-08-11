@@ -1,0 +1,130 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Vector tile server stack. Launches EC2 t2.micro instance with Amazon linux AMI and installs relevant packages",
+  "Metadata": {},
+  "Outputs": {
+    "URL": {
+      "Value": {
+        "Fn::Join": [
+          ".",
+          [
+            {
+              "Ref": "AWS::StackName"
+            },
+            {
+              "Ref": "HostedZoneName"
+            }
+          ]
+        ]
+      }
+    }
+  },
+  "Parameters": {
+    "HostedZoneName": {
+      "Default": "terria.io.",
+      "Type": "String"
+    }
+  },
+  "Resources": {
+    "Ec2Instance": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "InstanceType": "t2.micro",
+        "SecurityGroups": ["crisp-vector-tiles"],
+        "KeyName": "terria-crisp",
+        "ImageId": "ami-dc361ebf",
+        "IamInstanceProfile" : {
+          "Ref": "S3InstanceProfile"
+        },
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "\n", [
+                "#cloud-config",
+                "runcmd:",
+                "- curl --silent --location https://rpm.nodesource.com/setup_4.x | bash -",
+                "- yum -y install nodejs",
+                "- npm install -g forever",
+                "- mkdir /etc/vector-tiles",
+                "- aws s3 cp --region ap-southeast-2 s3://vector-tile-server/server-0.1.1.tar.gz /tmp",
+                "- aws s3 cp --region ap-southeast-2 s3://vector-tile-server/server-data-0.0.1.tar.gz /tmp",
+                "- tar -xzf /tmp/server-0.1.1.tar.gz -C /etc/vector-tiles",
+                "- tar -xzf /tmp/server-data-0.0.1.tar.gz -C /etc/vector-tiles",
+                "- forever start /etc/vector-tiles/forever.json"
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "S3InstanceProfile": {
+      "Properties": {
+        "Path": "/",
+        "Roles": [
+          {
+            "Ref": "S3Role"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::InstanceProfile"
+    },
+    "S3Role": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "sts:AssumeRole"
+              ],
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "ec2.amazonaws.com"
+                ]
+              }
+            }
+          ]
+        },
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyDocument": {
+              "Statement": [
+                {
+                  "Action": [
+                    "s3:Get*",
+                    "s3:List*"
+                  ],
+                  "Effect": "Allow",
+                  "Resource": "*"
+                }
+              ]
+            },
+            "PolicyName": "S3Read"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "DnsRecord" : {
+      "Type" : "AWS::Route53::RecordSet",
+      "Properties" : {
+         "HostedZoneName" : {
+            "Ref" : "HostedZoneName"
+         },
+         "Comment" : "DNS name for my instance.",
+         "Name" : {
+            "Fn::Join": [ ".", [
+              { "Ref": "AWS::StackName" },
+              { "Ref": "HostedZoneName" }
+            ] ]
+         },
+         "Type" : "A",
+         "TTL" : "900",
+         "ResourceRecords" : [
+            { "Fn::GetAtt" : [ "Ec2Instance", "PublicIp" ] }
+         ]
+      }
+   }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Sets up alias for existing vector tiles stack",
+  "Metadata": {},
+  "Parameters": {
+    "HostedZoneName": {
+      "Default": "terria.io.",
+      "Type": "String"
+    },
+    "StackName": {
+      "Type": "String"
+    },
+    "Alias": {
+      "Default": "staging.vector-tiles",
+      "Type": "String"
+    }
+  },
+  "Outputs": {
+    "URL": {
+      "Value": {
+        "Fn::Join": [ ".", [
+          { "Ref": "Alias" },
+          { "Ref": "HostedZoneName" }
+        ] ]
+      }
+    }
+  },
+  "Resources": {
+    "DnsRecord" : {
+      "Type" : "AWS::Route53::RecordSet",
+      "Properties" : {
+         "HostedZoneName" : {
+            "Ref" : "HostedZoneName"
+         },
+         "Name" : {
+            "Fn::Join": [ ".", [
+                { "Ref": "Alias" },
+                { "Ref": "HostedZoneName" }
+              ] ]
+         },
+         "Type" : "A",
+         "AliasTarget": {
+           "HostedZoneId": "Z2491Y48OYT7ZO",
+           "DNSName": {
+              "Fn::Join": [ ".", [
+                { "Ref": "StackName" },
+                { "Ref": "HostedZoneName" }
+              ] ]
+            }
+         }
+      }
+   }
+  }
+}
