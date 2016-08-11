@@ -14,7 +14,9 @@
   "name": "server-config",
   "version": "0.3.0",
   "main": "server.sh &",
-  "devDependencies": {},
+  "devDependencies": {
+    "eslint": "^3.0.1"
+  },
   "scripts": {
     "start": "bash -c \"./server.sh\""
   },

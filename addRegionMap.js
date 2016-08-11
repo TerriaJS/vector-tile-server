@@ -1,6 +1,6 @@
 // JS script to automate conversion of shapefile region map to vector tile region map for Tessera server
 //
-//    node addRegionMap.js
+//    node addRegionMap.js addRegionMapConfig.json
 //
 
 // This script must:
@@ -61,7 +61,6 @@ var when = require('when');
 var nodefn = require('when/node');
 var fs = require('fs');
 var path = require('path');
-var binary = require('node-pre-gyp');
 var shapefile = require('shapefile');
 var merc = new (require('sphericalmercator'))();
 
@@ -71,15 +70,11 @@ fs.readFilePromise = nodefn.lift(fs.readFile);
 var execPromise = nodefn.lift(exec);
 
 var const_minZ = 0;
-var const_maxGenZ = 12;
-var const_maxZ = Infinity;
 var const_headers = { "Cache-Control": "public,max-age=86400" };
 
-var const_parallel_limit = 3;
-
 var steps = {
-    reprojection: true,
-    tileGeneration: true,
+    reprojection: false,
+    tileGeneration: false,
     config: true
 }
 
@@ -87,14 +82,11 @@ var steps = {
 var dataDir = 'data/';
 var tempDir = 'temp/';
 var outputDir = 'output_files/';
-var shapefile_dir = 'geoserver_shapefiles/';
 var reprojected_shapefile_dir = 'epsg4326_shapefiles/'
 var configJsonDir = 'config/'
 var gdal_env_setup = '';// '"C:\\Program Files\\GDAL\\GDALShell.bat" && ';
 var regionMapConfigFile = process.argv[2];
 
-// From mapnik/bin/mapnik-shapeindex.js
-//var shapeindex = path.join(path.dirname( binary.find(require.resolve('mapnik/package.json')) ), 'shapeindex');
 
 // From Mozilla MDN. Polyfill for old Node versions
 if (typeof Object.assign != 'function') {
@@ -119,12 +111,6 @@ if (typeof Object.assign != 'function') {
     };
   })();
 }
-
-
-// var data_xml_template = fs.readFileSync('data.xml.template', 'utf8'); // Use shapefile template
-// function generateDataXml(layerName, bbox, pgsql_db) {
-//     return data_xml_template.replace(/\{layerName\}/g, layerName).replace(/\{bbox\}/g, bbox.join(',')); // Have to use regex for global (g) option (like sed)
-// }
 
 
 function determineNameProp(properties) {
@@ -158,7 +144,7 @@ function processLayer(c) {
     var geoJsonFile = tempDir + c.layerName + '.geojson';
     var mbtilesFile = dataDir + c.layerName + '.mbtiles';
     var layerRectangle;
-    var returnData = {};
+    var maxDetail = (32-c.generateTilesTo); // For tippecanoe
 
     return when().then(function() {
         // Reproject to EPSG:4326 and add an FID
@@ -198,7 +184,7 @@ function processLayer(c) {
         var reader = shapefile.reader(reprojected_shapefile_dir + c.layerName + '.shp');
         var nextRecord = function() { return nodefn.call(reader.readRecord.bind(reader)); };
         return nodefn.call(reader.readHeader.bind(reader)).then(function(header) {
-            layerRectangle = merc.convert(header.bbox, "WGS84");
+            layerRectangle = header.bbox;
             return nextRecord();
         }).tap(function(record) {
             // Tap the first record and use it to set nameProp
@@ -231,7 +217,8 @@ function processLayer(c) {
                 serverType: "MVT",
                 serverSubdomains: c.serverSubdomains,
                 serverMinZoom: const_minZ,
-                serverMaxZoom: (const_maxZ === Infinity ? undefined : const_maxZ), // JSON can't represent Infinity but both server and client default to Infinity
+                serverMaxNativeZoom: c.generateTilesTo,
+                serverMaxZoom: 28, // For tippecanoe generated vector tiles so that the maximum zoom tile still has detail 4 (28 == 32 - 4)
                 bbox: layerRectangle,
                 uniqueIdProp: c.uniqueIdProp !== "FID" ? c.uniqueIdProp : undefined, // Only set if not FID
                 regionProp: configEntry.regionProp,
@@ -273,7 +260,7 @@ function processLayer(c) {
             // -l str = mbtiels layer name
             // -z # = maximum zoom
             // -d # = detail at max zoom level (maximum allowed is 32 - max zoom, probably because Tippecanoe uses unsigned 32 bit integers)
-            return execPromise('tippecanoe -q -f -P -pp -pS -l ' + c.layerName + ' -z ' + c.generateTilesTo + ' -d ' + (32-c.generateTilesTo) + ' -o ' + mbtilesFile + ' ' + geoJsonFile + ' > /dev/null');
+            return execPromise('tippecanoe -q -f -P -pp -pS -l ' + c.layerName + ' -z ' + c.generateTilesTo + ' -d ' + maxDetail + ' -o ' + mbtilesFile + ' ' + geoJsonFile + ' > /dev/null');
         });
     }).then(function() {
         // Add/overwrite layerName.json to configJsonDir
