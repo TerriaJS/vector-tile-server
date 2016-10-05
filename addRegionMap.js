@@ -73,8 +73,8 @@ var const_minZ = 0;
 var const_headers = { "Cache-Control": "public,max-age=86400" };
 
 var steps = {
-    reprojection: false,
-    tileGeneration: false,
+    reprojection: true,
+    tileGeneration: true,
     config: true
 }
 
@@ -150,8 +150,6 @@ function processLayer(c) {
         // Reproject to EPSG:4326 and add an FID
         if (!steps.reprojection) return;
         var shapefile_loc = path.resolve(path.dirname(regionMapConfigFile), c.shapefile).replace(/ /g, '\\ ');
-        console.log(shapefile_loc);
-        console.log('Converting ' + c.layerName + ' to Web Mercator projection');
 
         // Add an FID if the input config
         var fidCommand = c.addFID ? ' -sql "select FID,* from ' + c.layerName + '"' : '';
@@ -163,15 +161,18 @@ function processLayer(c) {
 
         // Get all the columns
         var columns = {};
-
-        Object.keys(c.regionMappingEntries).forEach(function (key) {
-            if (c.regionMappingEntries[key].regionProp) {
-                columns[c.regionMappingEntries[key].regionProp] = true;
-            }
-            if (c.regionMappingEntries[key].disambigProp) {
-                columns[c.regionMappingEntries[key].disambigProp] = true;
-            }
-        })
+        if ('regionIdColumns' in c) {
+            columns = c.regionIdColumns;
+        } else {
+            Object.keys(c.regionMappingEntries).forEach(function (key) {
+                if (c.regionMappingEntries[key].regionProp) {
+                    columns[c.regionMappingEntries[key].regionProp] = true;
+                }
+                if (c.regionMappingEntries[key].disambigProp) {
+                    columns[c.regionMappingEntries[key].disambigProp] = true;
+                }
+            })
+        }
 
         var regionidJSONs = Object.keys(columns).map(function(column) {
             return {
@@ -203,46 +204,51 @@ function processLayer(c) {
         }).then(function() {
             // Save regionid json files
             return when.map(regionidJSONs, function(json) {
-                return fs.writeFilePromise(outputDir + 'region_map-' + json.layer + '_' + json.property + '.json', JSON.stringify(json));
+                var outFile = outputDir + 'region_map-' + json.layer + '_' + json.property + '.json'
+                console.log('Writing a regionids file to ' + path.resolve(outFile));
+                return fs.writeFilePromise(outFile, JSON.stringify(json));
             });
         });
     }).then(function() {
-        // Write out regionMapping-layerName.json
-        var regionWmsMap = {}
-        Object.keys(c.regionMappingEntries).forEach(function(key) {
-            var configEntry = c.regionMappingEntries[key];
-            var regionMappingEntry = {
-                layerName: c.layerName,
-                server: c.server,
-                serverType: "MVT",
-                serverSubdomains: c.serverSubdomains,
-                serverMinZoom: const_minZ,
-                serverMaxNativeZoom: c.generateTilesTo,
-                serverMaxZoom: 28, // For tippecanoe generated vector tiles so that the maximum zoom tile still has detail 4 (28 == 32 - 4)
-                bbox: layerRectangle,
-                uniqueIdProp: c.uniqueIdProp !== "FID" ? c.uniqueIdProp : undefined, // Only set if not FID
-                regionProp: configEntry.regionProp,
-                aliases: configEntry.aliases,
-                nameProp: c.nameProp,
-                description: configEntry.description,
-                regionIdsFile: 'data/regionids/region_map-' + c.layerName + '_' + configEntry.regionProp + '.json',
-            };
+        if (steps.config && 'regionMappingEntries' in c) {
+            // Write out regionMapping-layerName.json
+            var regionWmsMap = {}
+            Object.keys(c.regionMappingEntries).forEach(function(key) {
+                var configEntry = c.regionMappingEntries[key];
+                var regionMappingEntry = {
+                    layerName: c.layerName,
+                    server: c.server,
+                    serverType: "MVT",
+                    serverSubdomains: c.serverSubdomains,
+                    serverMinZoom: const_minZ,
+                    serverMaxNativeZoom: c.generateTilesTo,
+                    serverMaxZoom: 28, // For tippecanoe generated vector tiles so that the maximum zoom tile still has detail 4 (28 == 32 - 4)
+                    bbox: layerRectangle,
+                    uniqueIdProp: c.uniqueIdProp !== "FID" ? c.uniqueIdProp : undefined, // Only set if not FID
+                    regionProp: configEntry.regionProp,
+                    aliases: configEntry.aliases,
+                    nameProp: c.nameProp,
+                    description: configEntry.description,
+                    regionIdsFile: 'data/regionids/region_map-' + c.layerName + '_' + configEntry.regionProp + '.json',
+                };
 
-            if (configEntry.disambigProp) {
-                regionMappingEntry.disambigProp = configEntry.disambigProp;
-                regionMappingEntry.disambigRegionId = configEntry.disambigRegionId;
-                regionMappingEntry.regionDisambigIdsFile = 'data/regionids/region_map-' + c.layerName + '_' + configEntry.disambigProp + '.json';
-            }
+                if (configEntry.disambigProp) {
+                    regionMappingEntry.disambigProp = configEntry.disambigProp;
+                    regionMappingEntry.disambigRegionId = configEntry.disambigRegionId;
+                    regionMappingEntry.regionDisambigIdsFile = 'data/regionids/region_map-' + c.layerName + '_' + configEntry.disambigProp + '.json';
+                }
 
-            regionWmsMap[key] = regionMappingEntry;
-        });
+                regionWmsMap[key] = regionMappingEntry;
+            });
 
-        return fs.writeFilePromise(outputDir + 'regionMapping-' + c.layerName + '.json', JSON.stringify({regionWmsMap: regionWmsMap}, null, 4));
+            var outFile = outputDir + 'regionMapping-' + c.layerName + '.json';
+            console.log('Writing a regionMapping.json file to ' + path.resolve(outFile));
+            return fs.writeFilePromise(outFile, JSON.stringify({regionWmsMap: regionWmsMap}, null, 4));
+        }
 
     }).then(function() {
         if (c.generateTilesTo == null || !steps.tileGeneration) return;
         // Generate mbtiles
-        console.log('Running tile generation for ' + c.layerName);
 
         // Using Tippecanoe: // -s_srs EPSG:4326 -t_srs EPSG:4326
         // Convet to GeoJSON, then use Tippecanoe to generate tiles
@@ -265,7 +271,7 @@ function processLayer(c) {
     }).then(function() {
         // Add/overwrite layerName.json to configJsonDir
         var configJson = {};
-        configJson['/' + c.layerName] = {source: "mbtiles://" + path.resolve(mbtilesFile), headers: const_headers};
+        configJson['/' + c.layerName] = {source: "mbtiles:///etc/vector-tiles/" + mbtilesFile, headers: const_headers};
         return fs.writeFilePromise(configJsonDir + c.layerName + '.json', JSON.stringify(configJson, null, 4));
     /*}).catch(function(err) {
         console.log('Layer ' + c.layerName + ' failed with error: ' + err);

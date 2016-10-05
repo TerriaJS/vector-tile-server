@@ -4,24 +4,19 @@
   "Metadata": {},
   "Outputs": {
     "URL": {
-      "Value": {
-        "Fn::Join": [
-          ".",
-          [
-            {
-              "Ref": "AWS::StackName"
-            },
-            {
-              "Ref": "HostedZoneName"
-            }
-          ]
-        ]
-      }
+      "Value": { "Fn::Sub": "${AWS::StackName}.${HostedZoneName}" }
     }
   },
   "Parameters": {
+    "Ec2Type": {
+      "Default": "t2.micro",
+      "Type": "String"
+    },
     "HostedZoneName": {
       "Default": "terria.io.",
+      "Type": "String"
+    },
+    "ServerVersion": {
       "Type": "String"
     }
   },
@@ -29,10 +24,10 @@
     "Ec2Instance": {
       "Type": "AWS::EC2::Instance",
       "Properties": {
-        "InstanceType": "t2.micro",
+        "InstanceType": { "Ref": "Ec2Type" },
         "SecurityGroups": ["crisp-vector-tiles"],
         "KeyName": "terria-crisp",
-        "ImageId": "ami-dc361ebf",
+        "ImageId": "ami-55d4e436",
         "IamInstanceProfile" : {
           "Ref": "S3InstanceProfile"
         },
@@ -40,17 +35,17 @@
           "Fn::Base64": {
             "Fn::Join": [
               "\n", [
-                "#cloud-config",
-                "runcmd:",
-                "- curl --silent --location https://rpm.nodesource.com/setup_4.x | bash -",
-                "- yum -y install nodejs",
-                "- npm install -g forever",
-                "- mkdir /etc/vector-tiles",
-                "- aws s3 cp --region ap-southeast-2 s3://vector-tile-server/server-0.1.1.tar.gz /tmp",
-                "- aws s3 cp --region ap-southeast-2 s3://vector-tile-server/server-data-0.0.1.tar.gz /tmp",
-                "- tar -xzf /tmp/server-0.1.1.tar.gz -C /etc/vector-tiles",
-                "- tar -xzf /tmp/server-data-0.0.1.tar.gz -C /etc/vector-tiles",
-                "- forever start /etc/vector-tiles/forever.json"
+                "#!/bin/bash",
+                "curl --silent --location https://rpm.nodesource.com/setup_4.x | bash -",
+                "yum -y install nodejs",
+                "npm install -g forever",
+                "mkdir /etc/vector-tiles",
+                {"Fn::Sub": "aws s3 cp --region ap-southeast-2 s3://vector-tile-server/server-${ServerVersion}.tar.gz /tmp"},
+                {"Fn::Sub": "tar -xzf /tmp/server-${ServerVersion}.tar.gz -C /etc/vector-tiles"},
+                {"Fn::Sub": "/etc/vector-tiles/download_data.py ${AWS::StackName}"},
+                "echo 'sudo -u  ec2-user forever start /etc/vector-tiles/forever.json' >> /etc/rc.local",
+                "echo 'iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 8000' >> /etc/rc.local",
+                "/etc/rc.local"
               ]
             ]
           }

@@ -12,7 +12,6 @@ var when = require('when');
 var nodefn = require('when/node');
 var guard = require('when/guard');
 var fs = require('fs');
-var path = require('path');
 
 // Promise versions of node-style functions
 fs.writeFilePromise = nodefn.lift(fs.writeFile);
@@ -23,7 +22,7 @@ var const_maxGenZ = 12;
 
 var configDir = 'addRegionMapConfig/';
 var scriptOutputDir = 'output_files/';
-var serverLocation = "http://crisp.terria.io:8000/";
+var serverLocation = "http://vector-tiles.terria.io/";
 
 
 function processLayer(c) {
@@ -39,12 +38,14 @@ function processLayer(c) {
 var regionMappingJson = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 var regionMaps = Object.keys(regionMappingJson.regionWmsMap);
 
-var layers = {};
+var layers = {FID_TR_2013_AUST: {}, FID_CED_2013_AUST: {}, FID_CED_2016_AUST: {}, FID_LGA_2013_AUST: {}, fid_asgc06_cd: {}, fid_asgc06_sla: {}};
+
 
 for (var i = 0; i < regionMaps.length; i++) {
     var layerName = regionMappingJson.regionWmsMap[regionMaps[i]].layerName.replace('region_map:', '');
     if (layers[layerName] === undefined) {
-        layers[layerName] = {};
+        continue; // Only for predefined layers = {layer1: {}, layer2: {}}
+        //layers[layerName] = {};
     }
     layers[layerName][regionMaps[i]] = regionMappingJson.regionWmsMap[regionMaps[i]];
 }
@@ -52,7 +53,6 @@ for (var i = 0; i < regionMaps.length; i++) {
 
 // Only allow const_parallel_limit number of concurrent processLayer requests
 var guardedProcessLayer = guard(guard.n(const_parallel_limit), processLayer);
-var configJson = {};
 
 var exitCode = 0;
 /*
@@ -91,21 +91,23 @@ config = {
 when.map(Object.keys(layers), function(layerName) {
     // Generate addRegionMap.js config and send it to processLayer
     // Config will be saved in tempDir/, so shapefile path should be ../geoserver_shapefiles/...
-    config = {
+    var config = {
         layerName: layerName,
         shapefile: "../geoserver_shapefiles/" + layerName + ".shp",
         generateTilesTo: layerName === "FID_TM_WORLD_BORDERS" ? 10 : const_maxGenZ,
         addFID: false,
         uniqueIDProp: "FID",
         server: serverLocation + layerName + "/{z}/{x}/{y}.pbf",
-        "serverSubdomains": [],
-        "regionMappingEntries": layers[layerName]
+        serverSubdomains: [],
+        regionMappingEntries: layers[layerName]
     };
 
     return guardedProcessLayer(config).then(function() {
         // Register that the layer has been processed (so that if one layer fails, other successful layers don't need to be processed again)
         layers[layerName].completed = true;
         console.log(layerName + ' finished processing');
+    }).catch(function(err) {
+        console.log(layerName + ' failed during processing due to the following error:\n' + err);
     });
 
 }).catch(function(err) {
@@ -131,10 +133,9 @@ when.map(Object.keys(layers), function(layerName) {
     // Once all layers have finished processing
     for (var i = 0; i < regionMaps.length; i++) {
         var layerName = regionMappingJson.regionWmsMap[regionMaps[i]].layerName.replace('region_map:', '');
-        if (layers[layerName].completed) {
+        if (layers[layerName] && layers[layerName].completed) {
             Object.assign(regionMappingJson.regionWmsMap[regionMaps[i]], layerOutputJSONs[layerName].regionWmsMap[regionMaps[i]]); // Update properties
-        }
-        else {
+        } else {
             // Use WMS for this layer
             Object.assign(regionMappingJson.regionWmsMap[regionMaps[i]], {
                 server: regionMappingJson.regionWmsMap[regionMaps[i]].server,
