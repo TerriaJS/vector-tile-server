@@ -4,9 +4,10 @@
 from __future__ import print_function
 
 from datetime import date
-import re, json
+import re, json, base64
 
 import boto
+import boto.cloudformation
 from boto.s3.key import Key
 from common import request_input, yes_no_to_bool
 
@@ -52,7 +53,7 @@ elif method == 'p':
     remove = request_input('Which layers do you want to remove? Separate layers with a comma and space', '').split(', ')
     for layer in remove:
         del old_data[layer]
-    add = [layer_str.split(':') for layer_str in request_input('Which layers do you want to add/change versions? Format layers like layer_name:version and separate layers with a comma and space', '').split(', ')]
+    add = [layer_str.split(':') for layer_str in request_input('Which layers do you want to add/change versions? Format layers like layer_name:version and separate layers with a comma and space:', '').split(', ')]
     for layer, version in add:
         old_data[layer] = int(version)
     deployment_data = old_data
@@ -64,3 +65,15 @@ elif method == 'l':
 k = Key(bucket)
 k.key = 'deployments/{}.json'.format(name)
 k.set_contents_from_string(json.dumps({"data": deployment_data}))
+if yes_no_to_bool(request_input('Deployment file {} uploaded to S3. Start an EC2 with this deployment configuration?'.format(k.key), 'n'), False):
+    # Retrive user-data and template from S3
+    server_versions = sorted([re.search(r'server-(.*).tar.gz$', key.key).group(1) for key in bucket.list(prefix='server-')], key=lambda s: [int(n) for n in s.split('.')], reverse=True)
+    server_version = request_input('Out of {}, which server version do you want to use?'.format(', '.join(server_versions)), server_versions[0])
+
+    userdata = open('user-data').read().replace('{~STACK NAME~}', name).replace('{~SERVER VERSION~}', server_version)
+    template = open('aws-template.json').read().replace('{~BASE64 USER DATA~}', base64.b64encode(userdata))
+
+    cfn = boto.cloudformation.connect_to_region('ap-southeast-2') # Sydney
+    cfn.create_stack(name, template_body=template, capabilities=['CAPABILITY_IAM'])
+    print('Stack {} created'.format(name))
+

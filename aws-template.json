@@ -31,25 +31,7 @@
         "IamInstanceProfile" : {
           "Ref": "S3InstanceProfile"
         },
-        "UserData": {
-          "Fn::Base64": {
-            "Fn::Join": [
-              "\n", [
-                "#!/bin/bash",
-                "curl --silent --location https://rpm.nodesource.com/setup_4.x | bash -",
-                "yum -y install nodejs",
-                "npm install -g forever",
-                "mkdir /etc/vector-tiles",
-                {"Fn::Sub": "aws s3 cp --region ap-southeast-2 s3://vector-tile-server/server-${ServerVersion}.tar.gz /tmp"},
-                {"Fn::Sub": "tar -xzf /tmp/server-${ServerVersion}.tar.gz -C /etc/vector-tiles"},
-                {"Fn::Sub": "/etc/vector-tiles/download_data.py ${AWS::StackName}"},
-                "echo 'sudo -u  ec2-user forever start /etc/vector-tiles/forever.json' >> /etc/rc.local",
-                "echo 'iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 8000' >> /etc/rc.local",
-                "/etc/rc.local"
-              ]
-            ]
-          }
-        }
+        "UserData": "{~BASE64 USER DATA~}"
       }
     },
     "S3InstanceProfile": {
