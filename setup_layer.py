@@ -6,9 +6,9 @@ import sys, os, json, re, subprocess
 from collections import OrderedDict
 import boto
 from boto.s3.key import Key
-
-
 from osgeo import ogr
+
+from common import request_input, yes_no_to_bool
 
 def list_props(shapefile, layername):
     driver = ogr.GetDriverByName("ESRI Shapefile")
@@ -28,19 +28,7 @@ def unique_with_prop(shapefile, layername, prop):
 
 temp_dir = 'python_temp/'
 
-def yes_no_to_bool(str, default):
-    str = str.lower()
-    if str == 'y' or str == 'yes':
-        return True
-    elif str == 'n' or str == 'no':
-        return False
-    else:
-        print('Invalid yes or no format. Defaulting to: {}'.format(default))
-        return yes_no_to_bool(default, None) # Causes crash if default is badly formed
 
-def request_input(caption, default):
-    response = raw_input('{} ({}): '.format(caption, default))
-    return response if response != '' else default
 
 if __name__ == '__main__':
     def process_shapefile(shapefile):
