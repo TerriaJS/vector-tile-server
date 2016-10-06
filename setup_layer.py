@@ -107,5 +107,7 @@ if __name__ == '__main__':
             k2 = Key(bucket)
             k2.key = 'mbtiles/{}-v{}.mbtiles'.format(layer,maxversion+1)
             k2.set_contents_from_filename('data/{}.mbtiles'.format(layer))
+    
+    print('All server side files have been successfully uploaded to S3. You can find the files needed for your TerriaMap instance in output_files/ (region_map files need to be put in "wwwroot/data/regionids", regionMapping files need to be merged into "wwwroot/data/regionMapping.json")')
 
         
