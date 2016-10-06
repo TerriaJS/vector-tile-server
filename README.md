@@ -1,6 +1,9 @@
 # Vector-Tile-Server
 This sets up a [Tessera server](https://github.com/mojodna/tessera) for use as a vector tile server for [TerriaJS](https://github.com/TerriaJS/terriajs). It contains configuration, data and helper scripts. 
 
+## Important notes:
+- The server-version.tar.gz packages need to be created on a similar operating system (to the Amazon Linux AMI used)
+
 ## Helper scripts:
 - setup_layer.py: Script to add shapefile layers. Generates all neccessary TerriaMap and vector-tiles-server files and uploads the server files to S3
 - deploy.py: Script to deploy the server to AWS with any subset of the layers available in the S3 bucket, based on past deployments, all newest layers, or a selection of layers
