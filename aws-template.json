@@ -15,9 +15,6 @@
     "HostedZoneName": {
       "Default": "terria.io.",
       "Type": "String"
-    },
-    "ServerVersion": {
-      "Type": "String"
     }
   },
   "Resources": {
