@@ -27,6 +27,7 @@ def unique_with_prop(shapefile, layername, prop):
 
 
 temp_dir = 'python_temp/'
+output_dir = 'output_files/'
 
 def process_shapefile(shapefile):
     layername = os.path.basename(shapefile)[:-4] # Chop off .shp

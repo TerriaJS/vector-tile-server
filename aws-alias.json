@@ -16,13 +16,8 @@
     }
   },
   "Outputs": {
-    "URL": {
-      "Value": {
-        "Fn::Join": [ ".", [
-          { "Ref": "Alias" },
-          { "Ref": "HostedZoneName" }
-        ] ]
-      }
+    "Alias": {
+      "Value": { "Fn::Sub": "${Alias}.${HostedZoneName} -> ${StackName}" }
     }
   },
   "Resources": {
@@ -49,6 +44,6 @@
             }
          }
       }
-   }
+    }
   }
 }

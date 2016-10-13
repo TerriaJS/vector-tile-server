@@ -5,6 +5,9 @@
   "Outputs": {
     "URL": {
       "Value": { "Fn::Sub": "${AWS::StackName}.${HostedZoneName}" }
+    },
+    "Alias": {
+      "Value": { "Ref": "Alias"}
     }
   },
   "Parameters": {
@@ -14,6 +17,10 @@
     },
     "HostedZoneName": {
       "Default": "terria.io.",
+      "Type": "String"
+    },
+    "Alias": {
+      "Default": "",
       "Type": "String"
     }
   },
@@ -83,22 +90,27 @@
     "DnsRecord" : {
       "Type" : "AWS::Route53::RecordSet",
       "Properties" : {
-         "HostedZoneName" : {
-            "Ref" : "HostedZoneName"
-         },
+         "HostedZoneName" : { "Ref" : "HostedZoneName" },
          "Comment" : "DNS name for my instance.",
-         "Name" : {
-            "Fn::Join": [ ".", [
-              { "Ref": "AWS::StackName" },
-              { "Ref": "HostedZoneName" }
-            ] ]
-         },
+         "Name" : { "Fn::Sub": "${AWS::StackName}.${HostedZoneName}" },
          "Type" : "A",
          "TTL" : "900",
          "ResourceRecords" : [
             { "Fn::GetAtt" : [ "Ec2Instance", "PublicIp" ] }
          ]
       }
-   }
+    },
+    "DnsAlias" : {
+      "Type" : "AWS::Route53::RecordSet",
+      "Properties" : {
+         "HostedZoneName" : { "Ref" : "HostedZoneName" },
+         "Name" : { "Fn::Sub": "${Alias}.${HostedZoneName}" },
+         "Type" : "A",
+         "AliasTarget": {
+           "HostedZoneId": "Z2491Y48OYT7ZO",
+           "DNSName": { "Fn::Sub": "${AWS::StackName}.${HostedZoneName}" }
+         }
+      }
+    }
   }
 }
