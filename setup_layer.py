@@ -75,14 +75,14 @@ def process_shapefile(shapefile):
 
 if __name__ == '__main__':
     # Create folders if they don't exist
-    try:
-        for directory in ['temp', temp_dir[:-1], 'data', 'config', 'epsg4326_shapefiles', 'output_files']:
-            os.makedir(directory_name)
-    except OSError as exc: 
-        if exc.errno == errno.EEXIST and os.path.isdir(path):
-            pass
-        else:
-            raise
+    for directory in ['temp', temp_dir[:-1], 'data', 'config', 'epsg4326_shapefiles', 'output_files']:
+        try:
+            os.mkdir(directory)
+        except OSError as exc: 
+            if exc.errno == errno.EEXIST and os.path.isdir(directory):
+                pass
+            else:
+                raise
     print('Ensure you have the following directories locally: temp, python_temp, data, config, output_files')
     shapefiles = sys.argv[1:] or request_input('Which shapefiles do you want to add? Seperate shapefiles with a comma and space', '').split(', ')
     procs = [process_shapefile(shp) for shp in shapefiles]

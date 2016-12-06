@@ -50,22 +50,22 @@ elif method == 'p':
         print('The following layers are different in the old deployment from the "most current" layers in S3:')
         print('Note: a version of 0 signifies a missing layer either in the old deployment or currently in the S3 bucket')
         print('\n'.join('{:40}  {:5}  {:5}'.format(*t) for t in [('Layer name', 'Old v', 'New v')] + changed_layers))
-    remove = request_input('Which layers do you want to remove? Separate layers with a comma and space', '').split(', ')
+    remove = filter(None, request_input('Which layers do you want to remove? Separate layers with a comma and space:', '').split(', '))
     for layer in remove:
         del old_data[layer]
-    add = [layer_str.split(':') for layer_str in request_input('Which layers do you want to add/change versions? Format layers like layer_name:version and separate layers with a comma and space:', '').split(', ')]
+    add = [layer_str.split(':') for layer_str in filter(None, request_input('Which layers do you want to add/change versions? Format layers like layer_name:version and separate layers with a comma and space:', '').split(', '))]
     for layer, version in add:
         old_data[layer] = int(version)
     deployment_data = old_data
 elif method == 'l':
     print('The following layers are available:')
     print('\n'.join('{:40}  {:7}'.format(*t) for t in [('Layer name', 'Version')] + list(latest_layers.items())))
-    deployment_data = dict([(layer_str.split(':')[0], int(layer_str.split(':')[0])) for layer_str in request_input('Which layers do you want to add/change versions? Format layers like layer_name:version and separate layers with a comma and space:', '').split(', ')])
+    deployment_data = dict([(layer_str.split(':')[0], int(layer_str.split(':')[0])) for layer_str in filter(None, request_input('Which layers do you want to add/change versions? Format layers like layer_name:version and separate layers with a comma and space:', '').split(', '))])
 
 k = Key(bucket)
 k.key = 'deployments/{}.json'.format(name)
 k.set_contents_from_string(json.dumps({"data": deployment_data}))
-if yes_no_to_bool(request_input('Deployment file {} uploaded to S3. Start an EC2 with this deployment configuration?'.format(k.key), 'n'), False):
+if yes_no_to_bool(request_input('Deployment file {} uploaded to S3. Start an EC2 with this deployment configuration?'.format(k.key), 'y'), False):
     # Retrive user-data and template from S3
     server_versions = sorted([re.search(r'server-(.*).tar.gz$', key.key).group(1) for key in bucket.list(prefix='server-')], key=lambda s: [int(n) for n in s.split('.')], reverse=True)
     server_version = request_input('Out of {}, which server version do you want to use?'.format(', '.join(server_versions)), server_versions[0])

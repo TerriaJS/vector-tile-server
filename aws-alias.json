@@ -27,21 +27,11 @@
          "HostedZoneName" : {
             "Ref" : "HostedZoneName"
          },
-         "Name" : {
-            "Fn::Join": [ ".", [
-                { "Ref": "Alias" },
-                { "Ref": "HostedZoneName" }
-              ] ]
-         },
+         "Name" : { "Fn::Sub": "${Alias}.${HostedZoneName}" },
          "Type" : "A",
          "AliasTarget": {
            "HostedZoneId": "Z2491Y48OYT7ZO",
-           "DNSName": {
-              "Fn::Join": [ ".", [
-                { "Ref": "StackName" },
-                { "Ref": "HostedZoneName" }
-              ] ]
-            }
+           "DNSName": { "Fn::Sub": "${StackName}.${HostedZoneName}" }
          }
       }
     }
