@@ -4,10 +4,10 @@
   "Metadata": {},
   "Outputs": {
     "URL": {
-      "Value": { "Fn::Sub": "${AWS::StackName}.${HostedZoneName}" }
+      "Value": {"Fn::Sub": "${AWS::StackName}.${HostedZoneName}"}
     },
     "Alias": {
-      "Value": { "Ref": "Alias"}
+      "Value": {"Ref": "Alias"}
     }
   },
   "Parameters": {
@@ -22,13 +22,30 @@
     "Alias": {
       "Default": "",
       "Type": "String"
+    },
+    "WebServerPort": {
+      "Default": 8000,
+      "Type": "Number"
     }
   },
+  "Conditions": {
+    "CreateAlias": {"Fn::Not": [{"Fn::Equals": [{"Ref": "Alias"},""]}]}
+  },
   "Resources": {
-    "Ec2Instance": {
-      "Type": "AWS::EC2::Instance",
+    "AutoScalingGroup": {
+      "Type" : "AWS::AutoScaling::AutoScalingGroup",
+      "Properties" : {
+      "AvailabilityZones" : {"Fn::GetAZs" : ""},
+      "LaunchConfigurationName" : {"Ref" : "AutoScalingConfiguration"},
+      "MinSize" : "1",
+      "MaxSize" : "3",
+      "LoadBalancerNames" : [{"Ref" : "LoadBalancer"}]
+      }
+    },
+    "AutoScalingConfiguration": {
+      "Type": "AWS::AutoScaling::LaunchConfiguration",
       "Properties": {
-        "InstanceType": { "Ref": "Ec2Type" },
+        "InstanceType": {"Ref": "Ec2Type"},
         "SecurityGroups": ["crisp-vector-tiles"],
         "KeyName": "terria-crisp",
         "ImageId": "ami-55d4e436",
@@ -36,6 +53,27 @@
           "Ref": "S3InstanceProfile"
         },
         "UserData": "{~BASE64 USER DATA~}"
+      }
+    },
+    "LoadBalancer": {
+      "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+      "Properties": {
+        "AvailabilityZones": {
+          "Fn::GetAZs": ""
+        },
+        "Listeners": [
+          {
+            "InstancePort": {"Ref": "WebServerPort"},
+            "LoadBalancerPort": "80",
+            "Protocol": "HTTP"
+          },
+          {
+            "InstancePort": {"Ref": "WebServerPort"},
+            "LoadBalancerPort": "443",
+            "Protocol": "HTTPS",
+            "SSLCertificateId": "arn:aws:iam::278900443360:server-certificate/terra.io-20151208"
+          }
+        ]
       }
     },
     "S3InstanceProfile": {
@@ -54,14 +92,10 @@
         "AssumeRolePolicyDocument": {
           "Statement": [
             {
-              "Action": [
-                "sts:AssumeRole"
-              ],
+              "Action": ["sts:AssumeRole"],
               "Effect": "Allow",
               "Principal": {
-                "Service": [
-                  "ec2.amazonaws.com"
-                ]
+                "Service": ["ec2.amazonaws.com"]
               }
             }
           ]
@@ -72,10 +106,7 @@
             "PolicyDocument": {
               "Statement": [
                 {
-                  "Action": [
-                    "s3:Get*",
-                    "s3:List*"
-                  ],
+                  "Action": ["s3:Get*", "s3:List*"],
                   "Effect": "Allow",
                   "Resource": "*"
                 }
@@ -90,25 +121,26 @@
     "DnsRecord" : {
       "Type" : "AWS::Route53::RecordSet",
       "Properties" : {
-         "HostedZoneName" : { "Ref" : "HostedZoneName" },
+         "HostedZoneName" : {"Ref" : "HostedZoneName"},
          "Comment" : "DNS name for my instance.",
-         "Name" : { "Fn::Sub": "${AWS::StackName}.${HostedZoneName}" },
+         "Name" : {"Fn::Sub": "${AWS::StackName}.${HostedZoneName}"},
          "Type" : "A",
-         "TTL" : "900",
-         "ResourceRecords" : [
-            { "Fn::GetAtt" : [ "Ec2Instance", "PublicIp" ] }
-         ]
+         "AliasTarget": {
+           "HostedZoneId": {"Fn::GetAtt": ["LoadBalancer", "CanonicalHostedZoneNameID"]},
+           "DNSName": {"Fn::GetAtt": ["LoadBalancer", "CanonicalHostedZoneName"]}
+         }
       }
     },
     "DnsAlias" : {
       "Type" : "AWS::Route53::RecordSet",
+      "Condition": "CreateAlias",
       "Properties" : {
-         "HostedZoneName" : { "Ref" : "HostedZoneName" },
-         "Name" : { "Fn::Sub": "${Alias}.${HostedZoneName}" },
+         "HostedZoneName" : {"Ref" : "HostedZoneName"},
+         "Name" : {"Fn::Sub": "${Alias}.${HostedZoneName}"},
          "Type" : "A",
          "AliasTarget": {
            "HostedZoneId": "Z2491Y48OYT7ZO",
-           "DNSName": { "Fn::Sub": "${AWS::StackName}.${HostedZoneName}" }
+           "DNSName": {"Fn::Sub": "${AWS::StackName}.${HostedZoneName}"}
          }
       }
     }
