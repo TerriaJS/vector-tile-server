@@ -1,0 +1,10 @@
+#!/bin/bash
+curl --silent --location https://rpm.nodesource.com/setup_4.x | bash -
+yum -y install nodejs
+npm install -g forever
+mkdir /etc/vector-tiles
+aws s3 cp --region ap-southeast-2 s3://vector-tile-server/server-{~SERVER VERSION~}.tar.gz /tmp
+tar -xzf /tmp/server-{~SERVER VERSION~}.tar.gz -C /etc/vector-tiles
+/etc/vector-tiles/download_data.py {~STACK NAME~}
+echo 'sudo -u  ec2-user NODE_ENV=production forever start /etc/vector-tiles/forever.json' >> /etc/rc.local
+/etc/rc.local
