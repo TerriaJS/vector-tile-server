@@ -1,8 +1,7 @@
 {
   "dependencies": {
     "tessera": "github:steve9164/tessera",
-    "tilelive-bridge": "^2.3.1",
-    "tilelive-hybrid": "github:steve9164/tilelive-hybrid"
+    "tilelive-bridge": "^2.3.1"
   },
   "name": "server-config",
   "version": "1.0.0",
