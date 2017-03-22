@@ -1,0 +1,8 @@
+{
+    "uid": "vector-tiles",
+    "append": true,
+    "script": "node_modules/tessera/bin/tessera.js",
+    "sourceDir": "/etc/vector-tiles",
+    "args": ["-C", "1024", "-S", "1000", "-c", "config/", "-p", "8000", "--require", "tilelive-hybrid"]
+}
+

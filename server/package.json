@@ -1,0 +1,23 @@
+{
+  "dependencies": {
+    "tessera": "github:steve9164/tessera",
+    "tilelive-bridge": "^2.3.1",
+    "tilelive-hybrid": "github:steve9164/tilelive-hybrid"
+  },
+  "name": "server-config",
+  "version": "1.0.0",
+  "main": "server.sh &",
+  "devDependencies": {
+    "eslint": "^3.0.1"
+  },
+  "scripts": {
+    "start": "bash -c \"./server.sh\""
+  },
+  "author": "Stephen Davies",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/TerriaJS/vector-tile-server/issues"
+  },
+  "homepage": "https://github.com/TerriaJS/vector-tile-server#readme",
+  "description": "Configuration, data and helper scripts for [Tessera server](https://github.com/mojodna/tessera). Designed to work as a vector tile server for [TerriaJS](https://github.com/TerriaJS/terriajs)"
+}
