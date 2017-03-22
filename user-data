@@ -6,5 +6,6 @@ mkdir /etc/vector-tiles
 aws s3 cp --region ap-southeast-2 s3://vector-tile-server/server-{~SERVER VERSION~}.tar.gz /tmp
 tar -xzf /tmp/server-{~SERVER VERSION~}.tar.gz -C /etc/vector-tiles
 /etc/vector-tiles/download_data.py {~STACK NAME~}
-echo 'sudo -u  ec2-user NODE_ENV=production forever start /etc/vector-tiles/forever.json' >> /etc/rc.local
-/etc/rc.local
+SERVER_COMMAND='sudo -u ec2-user NODE_ENV=production forever start /etc/vector-tiles/forever.json'
+echo "$SERVER_COMMAND" >> /etc/rc.local
+bash -c $SERVER_COMMAND

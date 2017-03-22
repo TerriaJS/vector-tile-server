@@ -145,16 +145,16 @@ function processLayer(c) {
     var mbtilesFile = dataDir + c.layerName + '.mbtiles';
     var layerRectangle;
     var maxDetail = (32-c.generateTilesTo); // For tippecanoe
+    var shapefile_loc = path.resolve(path.dirname(regionMapConfigFile), c.shapefile).replace(/ /g, '\\ ');
 
     return when().then(function() {
         // Reproject to EPSG:4326 and add an FID
         if (!steps.reprojection) return;
-        var shapefile_loc = path.resolve(path.dirname(regionMapConfigFile), c.shapefile).replace(/ /g, '\\ ');
-
-        // Add an FID if the input config
-        var fidCommand = c.addFID ? ' -sql "select FID,* from ' + c.layerName + '"' : '';
-        return execPromise(gdal_env_setup + 'ogr2ogr -t_srs EPSG:4326 -clipsrc -180 -85.0511 180 85.0511 -overwrite -f "ESRI Shapefile" '
-                           + reprojected_shapefile_dir.slice(0,-1) + ' ' + shapefile_loc + fidCommand);
+        return execPromise('ogr2ogr -t_srs EPSG:4326 -clipsrc -180 -85.0511 180 85.0511 -overwrite -f "ESRI Shapefile" ' + reprojected_shapefile_dir + c.layerName + '_clean.shp ' + shapefile_loc + ' -dialect SQLITE -sql "SELECT ST_MakeValid(geometry) as geometry, * FROM ' + c.layerName + '"').then(function () {
+            var fidCommand = c.addFID ? ' -sql "select FID,* from ' + c.layerName + '_clean"' : '';
+            return execPromise(gdal_env_setup + 'ogr2ogr -t_srs EPSG:4326 -clipsrc -180 -85.0511 180 85.0511 -overwrite -f "ESRI Shapefile" '
+            + reprojected_shapefile_dir + c.layerName + '.shp ' + reprojected_shapefile_dir + c.layerName + '_clean.shp ' + fidCommand);
+        });
     }).then(function() {
         // Iterate over new shapefile and generate region_map json (FID -> property) files
         if (!steps.config) return;
@@ -213,7 +213,7 @@ function processLayer(c) {
         if (steps.config && 'regionMappingEntries' in c) {
             // Write out regionMapping-layerName.json
             var regionWmsMap = {}
-            Object.keys(c.regionMappingEntries).forEach(function(key) {
+            var promises = Object.keys(c.regionMappingEntries).map(function(key) {
                 var configEntry = c.regionMappingEntries[key];
                 var regionMappingEntry = {
                     layerName: c.layerName,
@@ -239,13 +239,17 @@ function processLayer(c) {
                 }
 
                 regionWmsMap[key] = regionMappingEntry;
+
+                // Also make a csv to test the layer in nationalmap
+                var testCsvFile = outputDir + 'test-' + c.layerName + '_' + configEntry.regionProp + '.csv';
+                console.log('Writing TerriaMap test csv file to ' + path.resolve(testCsvFile));
+                return execPromise('ogr2ogr -overwrite -f csv ' + testCsvFile + ' ' + shapefile_loc + ' -dialect sqlite -sql "SELECT ' + configEntry.regionProp + ' as ' + configEntry.aliases[0] + ', random() % 20 as randomval FROM ' + c.layerName + '"');
             });
 
             var outFile = outputDir + 'regionMapping-' + c.layerName + '.json';
             console.log('Writing a regionMapping.json file to ' + path.resolve(outFile));
-            return fs.writeFilePromise(outFile, JSON.stringify({regionWmsMap: regionWmsMap}, null, 4));
+            return when.join(promises, fs.writeFilePromise(outFile, JSON.stringify({regionWmsMap: regionWmsMap}, null, 4)));
         }
-
     }).then(function() {
         if (c.generateTilesTo == null || !steps.tileGeneration) return;
         // Generate mbtiles
@@ -254,8 +258,11 @@ function processLayer(c) {
         // Convet to GeoJSON, then use Tippecanoe to generate tiles
         return execPromise(gdal_env_setup + 'ogr2ogr -overwrite -f GeoJSON ' + geoJsonFile + ' ' + reprojected_shapefile_dir + c.layerName + '.shp').catch(function(err) {
             // Don't error out if the GeoJSON file has already been created
-            if (!err.message.match("GeoJSON Driver doesn't support update."))
+            if (err.message.match("GeoJSON Driver doesn't support update.")) {
+                console.warn('GeoJSON file ' + geoJsonFile + ' already exists. Delete this and run again to replace');
+            } else {
                 throw err;
+            }
         }).then(function() {
             // Use Tippecanoe with the following options:
             // -q = quiet
@@ -263,7 +270,7 @@ function processLayer(c) {
             // -P = parallel mode
             // -pp = don't split complex polygons
             // -pS = don't simplify the max zoom level (max zoom level tiles are exact geometry, for overzooming)
-            // -l str = mbtiels layer name
+            // -l str = mbtiles layer name
             // -z # = maximum zoom
             // -d # = detail at max zoom level (maximum allowed is 32 - max zoom, probably because Tippecanoe uses unsigned 32 bit integers)
             return execPromise('tippecanoe -q -f -P -pp -pS -l ' + c.layerName + ' -z ' + c.generateTilesTo + ' -d ' + maxDetail + ' -o ' + mbtilesFile + ' ' + geoJsonFile + ' > /dev/null');

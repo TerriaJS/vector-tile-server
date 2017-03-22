@@ -69,7 +69,7 @@
           "Interval": "30",
           "Target": {"Fn::Sub": "HTTP:${WebServerPort}/ping"},
           "Timeout": "10",
-          "UnhealthyThreshold": "5"
+          "UnhealthyThreshold": "3"
         },
         "Listeners": [
           {

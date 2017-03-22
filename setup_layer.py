@@ -30,7 +30,7 @@ temp_dir = 'python_temp/'
 output_dir = 'output_files/'
 
 def process_shapefile(shapefile):
-    layername = os.path.basename(shapefile)[:-4] # Chop off .shp
+    layername = request_input('What is the name of this layer?', os.path.basename(shapefile)[:-4]) # Chop off .shp
     attribute_list = list_props(shapefile, layername)
     print('Attributes in shapefile: {}'.format(', '.join(attribute_list)))
     generate_tiles_to = int(request_input('What zoom level should tiles be generated to?', 12))
