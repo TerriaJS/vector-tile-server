@@ -60,7 +60,7 @@ elif method == 'p':
 elif method == 'l':
     print('The following layers are available:')
     print('\n'.join('{:40}  {:7}'.format(*t) for t in [('Layer name', 'Version')] + list(latest_layers.items())))
-    deployment_data = dict([(layer_str.split(':')[0], int(layer_str.split(':')[0])) for layer_str in filter(None, request_input('Which layers do you want to add/change versions? Format layers like layer_name:version and separate layers with a comma and space:', '').split(', '))])
+    deployment_data = dict([(layer_str.split(':')[0], int(layer_str.split(':')[1])) for layer_str in filter(None, request_input('Which layers do you want to add/change versions? Format layers like layer_name:version and separate layers with a comma and space:', '').split(', '))])
 
 k = Key(bucket)
 k.key = 'deployments/{}.json'.format(name)
