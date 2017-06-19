@@ -12,6 +12,7 @@ import os
 import errno
 import json
 from collections import OrderedDict
+import uuid
 
 from osgeo import ogr, osr
 
@@ -68,27 +69,66 @@ def select_name_prop(properties):
 def mbtiles_filename(layer_name):
     return os.path.join('testing', 'data', '{}.mbtiles'.format(layer_name))
 
-async def generate_tiles(geometry_file, input_layer_name, layer_name, add_fid, generate_tiles_to):
-    'Clean geometry, add FID & generate tiles. Returns a wait function that blocks until processing is finished'
-    # asyncio create_subprocess_exec makes pipes that aren't useful
-    # So use Popen for the first 2 processes, and join them to an asyncio subprocess
-    o2o = Popen([
-        'ogr2ogr',
-        '-t_srs', 'EPSG:4326',
-        # '-clipsrc', '-180', '-85.0511', '180', '85.0511', # Clip to EPSG:4326 (not working)
-        '-f', 'GeoJSON',
-        '-dialect', 'SQLITE',
-        '-sql', 'SELECT ST_MakeValid(geometry) as geometry, * FROM {}'.format(input_layer_name),
-        '/vsistdout/', geometry_file
-    ], stdout=PIPE)
-    if add_fid:
-        o2o = Popen([
-            'ogr2ogr',
-            '-t_srs', 'EPSG:4326',
-            '-f', 'GeoJSON',
-            '-sql', 'select FID,* from OGRGeoJSON',
-            '/vsistdout/', '/vsistdin/'
-        ], stdin=o2o.stdout, stdout=PIPE)
+class GeoJSONTemporaryFile:
+    'Context manager for creating a temporary GeoJSON file from a given geometry file'
+    def __init__(self, geometry_file, input_layer_name, add_fid):
+        self.geometry_file = geometry_file
+        self.input_layer_name = input_layer_name
+        self.add_fid = add_fid
+        self.future = None
+        self.filename = ''
+
+    def _load(self):
+        'Start loading of geojson files'
+
+        async def to_geojson(geometry_file, input_layer_name, add_fid):
+            'Convert geometry_file to a temporary GeoJSON (including cleaning geometry and adding an fid if requested) and return the temporary filename'
+            filename = 'temp/{}.json'.format(uuid.uuid4().hex)
+            print('Generated filename {}'.format(filename))
+            o2o = await asyncio.create_subprocess_exec(*[
+                'ogr2ogr',
+                '-t_srs', 'EPSG:4326',
+                # '-clipsrc', '-180', '-85.0511', '180', '85.0511', # Clip to EPSG:4326 (not working)
+                '-f', 'GeoJSON',
+                '-dialect', 'SQLITE',
+                '-sql', 'SELECT ST_MakeValid(geometry) as geometry, * FROM {}'.format(input_layer_name),
+                filename, geometry_file
+            ])
+            print('Running geometry cleaning & reprojection')
+            await o2o.wait()
+            print('Finished geometry cleaning & reprojection')
+            if add_fid:
+                filename2 = 'temp/{}.json'.format(uuid.uuid4().hex)
+                print('Generated filename {}'.format(filename2))
+                o2o = await asyncio.create_subprocess_exec(*[
+                    'ogr2ogr',
+                    '-t_srs', 'EPSG:4326',
+                    '-f', 'GeoJSON',
+                    '-sql', 'select FID,* from OGRGeoJSON',
+                    filename2, filename
+                ])
+                print('Running FID generation')
+                await o2o.wait()
+                print('Finished FID generation')
+                os.remove(filename)
+                filename = filename2 # New geojson is now the geojson file to use
+            return filename
+
+        if self.future is None:
+            self.future = to_geojson(self.geometry_file, self.input_layer_name, self.add_fid)
+
+    async def __aenter__(self):
+        self._load()
+        self.filename = await self.future
+        return self.filename
+
+    async def __aexit__(self, exc_type, exc, tb):
+        os.remove(self.filename)
+
+
+
+async def generate_tiles(geojson_file, layer_name, generate_tiles_to):
+    'Generate tiles with Tippecanoe'
     tippe = await asyncio.create_subprocess_exec(*[
         'tippecanoe',
         '-q',
@@ -99,8 +139,9 @@ async def generate_tiles(geometry_file, input_layer_name, layer_name, add_fid, g
         '-l', layer_name,
         '-z', str(generate_tiles_to), # Max zoom
         '-d', str(32-generate_tiles_to), # Detail
-        '-o', './{0}'.format(mbtiles_filename(layer_name))
-    ], stdin=o2o.stdout, stdout=DEVNULL)
+        '-o', './{0}'.format(mbtiles_filename(layer_name)),
+        geojson_file
+    ], stdout=DEVNULL, stderr=DEVNULL)
     await tippe.wait()
     return
 
@@ -112,7 +153,7 @@ async def generate_test_csv(geometry_file, test_csv_file, input_layer_name, regi
         '-dialect', 'SQLITE',
         '-sql', 'SELECT {0} as {1}, random() % 20 as randomval FROM {2}'.format(region_property, alias, input_layer_name),
         '/vsistdout/', geometry_file
-    ], stdout=open(test_csv_file, 'w'))
+    ], stdout=open(test_csv_file, 'w')) # CSV driver is problematic writing files, so deal with that in Python
     await o2o.wait()
     return
 
@@ -140,11 +181,15 @@ async def create_layer(geometry_file):
     generate_tiles_to = int(request_input('What zoom level should tiles be generated to?', 12))
     layer_defn = layer.GetLayerDefn()
     attributes = [layer_defn.GetFieldDefn(i).name for i in range(layer_defn.GetFieldCount())]
+    layer_defn = None
     print('Attributes in file: {}'.format(', '.join(attributes)))
     has_fid = yes_no_to_bool(request_input('Is there an FID attribute?', 'n'), False)
 
-    # Start tile generation. Must call wait before Python execution ends
-    future = generate_tiles(geometry_file, input_layer_name, layer_name, not has_fid, generate_tiles_to)
+
+    geojson_tempfile = GeoJSONTemporaryFile(geometry_file, input_layer_name, not has_fid)
+    # Start geojson conversion. Must wait on this sometime before Python execution ends
+    # This doesn't seem to work. Ideally it should start the first subprocess here, but it doesn't seem to
+    geojson_tempfile._load()
 
     # Ask for the current FID attribute if there is one, otherwise add an FID and use that
     # Test FID attribute
@@ -153,13 +198,14 @@ async def create_layer(geometry_file):
     if has_fid and set(layer.GetFeature(i).GetField(fid_attribute) for i in range(num_features)) != set(range(num_features)):
         print('Attribute not an appropriate FID (must number features from 0 to #features - 1 in any order)')
         return
+
     server_url = request_input('Where is the vector tile server hosted?', 'http://localhost:8000/{}/{{z}}/{{x}}/{{y}}.pbf'.format(layer_name))
     description = request_input('What is the description of this region map?', '')
     regionMapping_entries = OrderedDict()
     regionMapping_entry_name = request_input('Name another regionMapping.json entry (leave blank to finish)', '')
     regionId_columns = set() # All the columns that need regionId file generation
     test_csv_futures = []
-    w, e, s, n = layer.GetExtent()
+
     while regionMapping_entry_name != '':
         o = OrderedDict([
             ('layerName', layer_name),
@@ -167,7 +213,7 @@ async def create_layer(geometry_file):
             ('serverType', 'MVT'),
             ('serverMaxNativeZoom', generate_tiles_to),
             ('serverMaxZoom', 28),
-            ('bbox', [w, s, e, n]),
+            ('bbox', None), # bbox is calculated asynchronously
             ('uniqueIdProp', fid_attribute),
             ('regionProp', None),
             ('nameProp', select_name_prop(attributes)),
@@ -197,12 +243,16 @@ async def create_layer(geometry_file):
             o['disambigRegionId'] = request_input('Which regionMapping definition does this disambiguation property come from?', '')
             print('No test CSV generated for this regionMapping entry (test CSV generation does not currently support disambiguation properties)')
         else:
-            # Make test CSVs
+            # Make test CSVs (only when no disambiguation property needed)
             test_csv_file = os.path.join('testing', 'output_files', 'test-{0}_{1}.csv'.format(layer_name, o['regionProp']))
             test_csv_futures.append(generate_test_csv(geometry_file, test_csv_file, input_layer_name, o['regionProp'], o['aliases'][0]))
 
         regionMapping_entries[regionMapping_entry_name] = o
         regionMapping_entry_name = request_input('Name another regionMapping.json entry (leave blank to finish)', '')
+
+    # Close data source
+    layer = None
+    data_source = None
 
     # Make vector-tile-server config file
     config_json = {
@@ -214,34 +264,41 @@ async def create_layer(geometry_file):
     config_filename = os.path.join('testing', 'config', '{0}.json'.format(layer_name))
     json.dump(config_json, open(config_filename, 'w'))
 
-    # Make regionMapping file
-    regionMapping_filename = os.path.join('testing', 'output_files', 'regionMapping-{0}.json'.format(layer_name))
-    json.dump({'regionWmsMap': regionMapping_entries}, open(regionMapping_filename, 'w'), indent=4)
+    # Wait for geojson conversion here, then add bbox to regionMapping entries, generate regionids and generate vector tiles
+    async with geojson_tempfile as geojson_filename:
+        # Start tippecanoe
+        tippecanoe_future = generate_tiles(geojson_filename, layer_name, generate_tiles_to)
 
-    # Make regionid files
-    # Extract all the variables needed for the regionid files
-    get_field = lambda i, field: layer.GetFeature(i).GetField(field)
-    if has_fid:
+        # Calculate bounding box upadte regionMapping entries, then write to file
+        geojson_ds = ogr.GetDriverByName('GeoJSON').Open(geojson_filename)
+        geojson_layer = geojson_ds.GetLayer()
+        w, e, s, n = geojson_layer.GetExtent()
+        for entry in regionMapping_entries.values():
+            entry['bbox'] = [w, s, e, n]
+        # Make regionMapping file
+        regionMapping_filename = os.path.join('testing', 'output_files', 'regionMapping-{0}.json'.format(layer_name))
+        json.dump({'regionWmsMap': regionMapping_entries}, open(regionMapping_filename, 'w'), indent=4)
+
+        # Make regionid files
+        # Extract all the variables needed for the regionid files
+        get_field = lambda i, field: geojson_layer.GetFeature(i).GetField(field)
         # Doesn't assume that fids are sequential
         # Make a dict of the attributes from the features first, then put them in the right order
         regionID_values_dict = {get_field(i, fid_attribute): tuple(get_field(i, column) for column in regionId_columns) for i in range(num_features)}
         # The FID attribute has already been checked to allow this transformation
         regionID_values = [regionID_values_dict[i] for i in range(num_features)]
-    else:
-        # Assume sequentially assigned fids (ogr2ogr should apply fids sequentially)
-        regionID_values = [tuple(get_field(i, column) for column in regionId_columns) for i in range(num_features)]
-    for column, values in zip(regionId_columns, regionID_values):
-        regionId_json = OrderedDict([ # Make string comparison of files possible
-            ('layer', layer_name),
-            ('property', column),
-            ('values', list(values))
-        ])
-        regionId_filename = os.path.join('testing', 'output_files', 'region_map-{0}_{1}.json'.format(layer_name, column))
-        json.dump(regionId_json, open(regionId_filename, 'w'))
-
-    layer = None
-    data_source = None
-    await asyncio.gather(future, *test_csv_futures) # Wait for tile & csv generation to finish
+        for column, values in zip(regionId_columns, zip(*regionID_values)):
+            regionId_json = OrderedDict([ # Make string comparison of files possible
+                ('layer', layer_name),
+                ('property', column),
+                ('values', list(values))
+            ])
+            regionId_filename = os.path.join('testing', 'output_files', 'region_map-{0}_{1}.json'.format(layer_name, column))
+            json.dump(regionId_json, open(regionId_filename, 'w'))
+        geojson_layer = None
+        geojson_ds = None
+        await tippecanoe_future # Wait for tippecanoe to finish before destroying the geojson file
+    await asyncio.gather(*test_csv_futures) # Wait for csv generation to finish (almost definitely finished by here anyway, but correctness yay)
     return
 
 async def main():
@@ -251,11 +308,11 @@ async def main():
 
 if __name__ == '__main__':
     # Create folders if they don't exist
-    for directory in ['data', 'config', 'output_files']:
+    for directory in ['data', 'config', 'output_files', 'temp']:
         try:
             os.mkdir(directory)
-        except OSError as exc:
-            if exc.errno == errno.EEXIST and os.path.isdir(directory):
+        except OSError as err:
+            if err.errno == errno.EEXIST and os.path.isdir(directory):
                 pass
             else:
                 raise

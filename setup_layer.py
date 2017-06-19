@@ -22,7 +22,6 @@ def unique_with_prop(shapefile, layername, prop):
     driver = ogr.GetDriverByName("ESRI Shapefile")
     dataSource = driver.Open(shapefile, 0)
     layer = dataSource.ExecuteSQL('SELECT COUNT(DISTINCT {1}) / COUNT(*) AS allunique FROM {0}'.format(layername, prop), dialect='SQLITE') # If one enjoys SQL attacking one's own files, then go ahead
-    print(layer)
     return bool(layer.GetFeature(0).GetField('allunique'))
 
 
@@ -54,7 +53,7 @@ def process_shapefile(shapefile):
             print('The given region property uniquely defines each region.')
         o['aliases'] = request_input('What aliases should this be available under? Separate aliases with a comma and space', '').split(', ')
         o['description'] = description
-        
+
         regionMapping_entries[regionMapping_entry_name] = o
         regionMapping_entry_name = request_input('Name another regionMapping.json entry (leave blank to finish)', '')
     cf = os.path.join(temp_dir, '{}.json'.format(layername))
@@ -78,7 +77,7 @@ if __name__ == '__main__':
     for directory in ['temp', temp_dir[:-1], 'data', 'config', 'epsg4326_shapefiles', 'output_files']:
         try:
             os.mkdir(directory)
-        except OSError as exc: 
+        except OSError as exc:
             if exc.errno == errno.EEXIST and os.path.isdir(directory):
                 pass
             else:
@@ -108,7 +107,7 @@ if __name__ == '__main__':
             k2 = Key(bucket)
             k2.key = 'mbtiles/{}-v{}.mbtiles'.format(layer,maxversion+1)
             k2.set_contents_from_filename('data/{}.mbtiles'.format(layer))
-    
+
     print('All server side files have been successfully uploaded to S3. You can find the files needed for your TerriaMap instance in output_files/ (region_map files need to be put in "wwwroot/data/regionids", regionMapping files need to be merged into "wwwroot/data/regionMapping.json")')
 
-        
+
