@@ -50,10 +50,10 @@ elif method == 'p':
         print('The following layers are different in the old deployment from the "most current" layers in S3:')
         print('Note: a version of 0 signifies a missing layer either in the old deployment or currently in the S3 bucket')
         print('\n'.join('{:40}  {:5}  {:5}'.format(*t) for t in [('Layer name', 'Old v', 'New v')] + changed_layers))
-    remove = filter(None, request_input('Which layers do you want to remove? Separate layers with a comma and space:', '').split(', '))
+    remove = [layer.strip() for layer in request_input('Which layers do you want to remove? Separate layers with a comma:', '').split(',') if layer.strip() != '']
     for layer in remove:
         del old_data[layer]
-    add = [layer_str.split(':') for layer_str in filter(None, request_input('Which layers do you want to add/change versions? Format layers like layer_name:version and separate layers with a comma and space:', '').split(', '))]
+    add = [layer_str.strip().split(':') for layer_str in request_input('Which layers do you want to add/change versions? Format layers like layer_name:version and separate layers with a comma:', '').split(',') if layer_str.strip() != '']
     for layer, version in add:
         old_data[layer] = int(version)
     deployment_data = old_data
