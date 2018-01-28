@@ -42,7 +42,7 @@ def request_input(caption, default):
 
 def unique_with_prop(data_source, layername, prop):
     'Determine if the property prop uniquely identifies every feature in the given layer of the DataSource'
-    layer = data_source.ExecuteSQL('SELECT COUNT(DISTINCT {1}) / COUNT(*) AS allunique FROM {0}'.format(layername, prop), dialect='SQLITE') # If one enjoys SQL attacking one's own files, then go ahead
+    layer = data_source.ExecuteSQL('SELECT COUNT(DISTINCT {1}) / COUNT(*) AS allunique FROM "{0}"'.format(layername, prop), dialect='SQLITE') # If one enjoys SQL attacking one's own files, then go ahead
     all_unique = bool(layer.GetFeature(0).GetField('allunique'))
     data_source.ReleaseResultSet(layer)
     return all_unique
@@ -71,39 +71,39 @@ def select_name_prop(properties):
 def mbtiles_filename(layer_name):
     return os.path.join('data', '{}.mbtiles'.format(layer_name))
 
-async def to_geojson(geometry_file, input_layer_name, add_fid, start_future):
-    'Convert geometry_file to a temporary GeoJSON (including cleaning geometry and adding an fid if requested) and return the temporary filename'
-    filename = 'temp/{}.json'.format(uuid.uuid4().hex)
-    print('Generated filename {}'.format(filename))
-    o2o = await asyncio.create_subprocess_exec(*[
-        'ogr2ogr',
-        '-t_srs', 'EPSG:4326',
-        # '-clipsrc', '-180', '-85.0511', '180', '85.0511', # Clip to EPSG:4326 (not working)
-        '-f', 'GeoJSON',
-        '-dialect', 'SQLITE',
-        '-sql', 'SELECT ST_MakeValid(geometry) as geometry, * FROM {}'.format(input_layer_name),
-        filename, geometry_file
-    ])
-    start_future.set_result(None) # Conversion started, let the prompts continue and wait on finished processing later
-    print('Running geometry cleaning & reprojection')
-    await o2o.wait()
-    print('Finished geometry cleaning & reprojection')
-    if add_fid:
-        filename2 = 'temp/{}.json'.format(uuid.uuid4().hex)
-        print('Generated filename {}'.format(filename2))
-        o2o = await asyncio.create_subprocess_exec(*[
-            'ogr2ogr',
-            '-t_srs', 'EPSG:4326',
-            '-f', 'GeoJSON',
-            '-sql', 'select FID,* from OGRGeoJSON',
-            filename2, filename
-        ])
-        print('Running FID generation')
-        await o2o.wait()
-        print('Finished FID generation')
-        os.remove(filename)
-        filename = filename2 # New geojson is now the geojson file to use
-    return filename
+# async def to_geojson(geometry_file, input_layer_name, add_fid, start_future):
+#     'Convert geometry_file to a temporary GeoJSON (including cleaning geometry and adding an fid if requested) and return the temporary filename'
+#     filename = 'temp/{}.json'.format(uuid.uuid4().hex)
+#     print('Generated filename {}'.format(filename))
+#     o2o = await asyncio.create_subprocess_exec(*[
+#         'ogr2ogr',
+#         '-t_srs', 'EPSG:4326',
+#         # '-clipsrc', '-180', '-85.0511', '180', '85.0511', # Clip to EPSG:4326 (not working)
+#         '-f', 'GeoJSON',
+#         '-dialect', 'SQLITE',
+#         '-sql', 'SELECT ST_MakeValid(geometry) as geometry, * FROM {}'.format(input_layer_name),
+#         filename, geometry_file
+#     ])
+#     start_future.set_result(None) # Conversion started, let the prompts continue and wait on finished processing later
+#     print('Running geometry cleaning & reprojection')
+#     await o2o.wait()
+#     print('Finished geometry cleaning & reprojection')
+#     if add_fid:
+#         filename2 = 'temp/{}.json'.format(uuid.uuid4().hex)
+#         print('Generated filename {}'.format(filename2))
+#         o2o = await asyncio.create_subprocess_exec(*[
+#             'ogr2ogr',
+#             '-t_srs', 'EPSG:4326',
+#             '-f', 'GeoJSON',
+#             '-sql', 'select FID,* from OGRGeoJSON',
+#             filename2, filename
+#         ])
+#         print('Running FID generation')
+#         await o2o.wait()
+#         print('Finished FID generation')
+#         os.remove(filename)
+#         filename = filename2 # New geojson is now the geojson file to use
+#     return filename
 
 class GeoJSONTemporaryFile:
     'Context manager for creating a temporary GeoJSON file from a given geometry file'
@@ -124,7 +124,7 @@ class GeoJSONTemporaryFile:
             # '-clipsrc', '-180', '-85.0511', '180', '85.0511', # Clip to EPSG:4326 (not working)
             '-f', 'GeoJSON',
             '-dialect', 'SQLITE',
-            '-sql', 'SELECT ST_MakeValid(geometry) as geometry, * FROM {}'.format(self.input_layer_name),
+            '-sql', 'SELECT ST_MakeValid(geometry) as geometry, * FROM "{}"'.format(self.input_layer_name),
             filename, self.geometry_file
         ])
         print('Running geometry cleaning & reprojection')
@@ -134,11 +134,16 @@ class GeoJSONTemporaryFile:
             if add_fid:
                 filename2 = 'temp/{}.json'.format(uuid.uuid4().hex)
                 print('Generated filename {}'.format(filename2))
+                ds = ogr.GetDriverByName('GeoJSON').Open(filename)
+                layer = ds.GetLayer()
+                layername = layer.GetName()
+                layer = None
+                ds = None
                 o2o = await asyncio.create_subprocess_exec(*[
                     'ogr2ogr',
                     '-t_srs', 'EPSG:4326',
                     '-f', 'GeoJSON',
-                    '-sql', 'select FID,* from OGRGeoJSON',
+                    '-sql', 'select FID,* from "{}"'.format(layername),
                     filename2, filename
                 ])
                 print('Running FID generation')
@@ -183,7 +188,7 @@ async def generate_test_csv(geometry_file, test_csv_file, input_layer_name, regi
         'ogr2ogr',
         '-f', 'CSV',
         '-dialect', 'SQLITE',
-        '-sql', 'SELECT {0} as {1}, random() % 20 as randomval FROM {2}'.format(region_property, alias, input_layer_name),
+        '-sql', 'SELECT {0} as {1}, random() % 20 as randomval FROM "{2}"'.format(region_property, alias, input_layer_name),
         '/vsistdout/', geometry_file
     ], stdout=open(test_csv_file, 'w')) # CSV driver is problematic writing files, so deal with that in Python
     return o2o.wait() # return finishing future (a future in a future)
