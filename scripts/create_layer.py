@@ -316,10 +316,10 @@ async def create_layer(geometry_file):
 
             # Make regionid files
             # Extract all the variables needed for the regionid files
-            get_field = lambda i, field: geojson_layer.GetFeature(i).GetField(field)
             # Doesn't assume that fids are sequential
             # Make a dict of the attributes from the features first, then put them in the right order
-            regionID_values_dict = {get_field(i, fid_attribute): tuple(get_field(i, column) for column in regionId_columns) for i in range(num_features)}
+            geojson_layer.ResetReading() # Reset layer reading before iterating over layer
+            regionID_values_dict = {feature.GetField(fid_attribute): tuple(feature.GetField(column) for column in regionId_columns) for feature in geojson_layer}
             # The FID attribute has already been checked to allow this transformation
             regionID_values = [regionID_values_dict[i] for i in range(num_features)]
             for column, values in zip(regionId_columns, zip(*regionID_values)):
