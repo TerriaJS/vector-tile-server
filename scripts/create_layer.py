@@ -343,15 +343,20 @@ async def main():
     geometries = sys.argv[1:] or request_input('Which geometries do you want to add? Seperate geometry files with a comma and space', '').split(', ')
     finished_layers = await asyncio.gather(*[await create_layer(geometry_file) for geometry_file in geometries])
 
-    s3 = boto3.resource('s3')
-    bucket = s3.Bucket('vector-tile-server')
-    for layer_name in finished_layers:
-        # Get the highest version of this layer and add 1
-        maxversion = max([int(re.search(r'v(\d*).json$', obj.key).group(1)) for obj in bucket.objects.filter(Prefix='config/{}'.format(layer_name))] + [0]) # Default to 0
-        print('Uploading {}-v{} to S3'.format(layer_name, maxversion+1))
+    try:
+        terria_aws = boto3.session.Session(profile_name='terria')
 
-        bucket.upload_file('config/{}.json'.format(layer_name), 'config/{}-v{}.json'.format(layer_name, maxversion+1))
-        bucket.upload_file('data/{}.mbtiles'.format(layer_name), 'mbtiles/{}-v{}.mbtiles'.format(layer_name, maxversion+1))
+        s3 = terria_aws.resource('s3')
+        bucket = s3.Bucket('vector-tile-server')
+        for layer_name in finished_layers:
+            # Get the highest version of this layer and add 1
+            maxversion = max([int(re.search(r'v(\d*).json$', obj.key).group(1)) for obj in bucket.objects.filter(Prefix='config/{}'.format(layer_name))] + [0]) # Default to 0
+            print('Uploading {}-v{} to S3'.format(layer_name, maxversion+1))
+
+            bucket.upload_file('config/{}.json'.format(layer_name), 'config/{}-v{}.json'.format(layer_name, maxversion+1))
+            bucket.upload_file('data/{}.mbtiles'.format(layer_name), 'mbtiles/{}-v{}.mbtiles'.format(layer_name, maxversion+1))
+    except:
+        print('Uploading to S3 failed. New config saved to config/{layerName}.json and vector tiles to data/{layerName}.mbtiles')
 
 
 if __name__ == '__main__':

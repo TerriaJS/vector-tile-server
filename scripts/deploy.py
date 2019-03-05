@@ -17,9 +17,11 @@ method = request_input('Create new deployment from previous deployment (p), arbi
 
 print('Connecting to and analysing S3 bucket')
 
+terria_aws = boto3.session.Session(profile_name='terria')
+
 # Get all layers currently on the server
-s3 = boto3.resource('s3')
-s3c = boto3.client('s3')
+s3 = terria_aws.resource('s3')
+s3c = terria_aws.client('s3')
 bucket = s3.Bucket('vector-tile-server')
 keys = [re.search(r'config/(.*)-v(\d*).json$', obj.key).groups() for obj in bucket.objects.filter(Prefix='config/')]
 
@@ -75,7 +77,7 @@ if yes_no_to_bool(request_input('Deployment file {} uploaded to S3. Start an EC2
     userdata = open('user-data').read().replace('{~STACK NAME~}', deployment_name).replace('{~SERVER VERSION~}', server_version)
     template = open('aws-template.json').read().replace('{~BASE64 USER DATA~}', base64.b64encode(userdata.encode('utf-8')).decode('utf-8'))
 
-    cfn = boto3.client('cloudformation', region_name='ap-southeast-2')
+    cfn = terria_aws.client('cloudformation', region_name='ap-southeast-2')
     cfn.create_stack(StackName=deployment_name, TemplateBody=template, Capabilities=['CAPABILITY_IAM'])
     print('Stack {} created'.format(deployment_name))
 
