@@ -53,8 +53,8 @@
       "Properties": {
         "InstanceType": {"Ref": "Ec2Type"},
         "SecurityGroups": ["crisp-vector-tiles"],
-        "KeyName": "terria-crisp",
-        "ImageId": "ami-55d4e436",
+        "KeyName": "terria-phassall",
+        "ImageId": "ami-09b42976632b27e9b",
         "IamInstanceProfile" : {"Ref": "S3InstanceProfile"},
         "UserData": "{~BASE64 USER DATA~}"
       }

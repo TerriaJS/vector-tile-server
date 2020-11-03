@@ -1,7 +1,7 @@
 #!/bin/bash
 curl --silent --location https://rpm.nodesource.com/setup_4.x | bash -
-yum -y install nodejs
-npm install -g forever
+yum -y install nodejs amazon-ssm-agent
+npm install -g forever@1
 mkdir /etc/vector-tiles
 aws s3 cp --region ap-southeast-2 s3://vector-tile-server/server-{~SERVER VERSION~}.tar.gz /tmp
 tar -xzf /tmp/server-{~SERVER VERSION~}.tar.gz -C /etc/vector-tiles
